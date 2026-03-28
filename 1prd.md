@@ -7,11 +7,14 @@
 ## 2. 주요 기능 및 연동 (Core Features & Integrations)
 1. **Google Sheets API 연동**:
    - 학생 성적 및 과제 제출 현황 데이터를 읽고 쓰기 위한 메인 데이터베이스 역할.
-   - 대상 시트 링크: [eval 관리 시트 (과제점수 탭)](https://docs.google.com/spreadsheets/d/1XA5Hnu5PEidFMreanPCy1eMrofGiyFDPo4buN3129Mc/edit?gid=1514293361#gid=1514293361)
+   - 대상 시트 링크:
+     - **파이썬 과정**: [파이썬 과제 시트](https://docs.google.com/spreadsheets/d/1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc/edit?gid=1892167835#gid=1892167835)
+     - **웹 과정**: [웹 과제 시트](https://docs.google.com/spreadsheets/d/1XA5Hnu5PEidFMreanPCy1eMrofGiyFDPo4buN3129Mc/edit?gid=1514293361#gid=1514293361)
    - 인증 방식: 서비스 계정(Service Account, `secret.json`)을 활용.
 2. **이메일 수신 및 성적 처리 (과제 채점 자동화)**:
    - **수신 대상 계정**: 읽어올 대상 메일 계정은 반드시 `wonhyukc@stu.ac.kr` 이어야 합니다.
-   - **수신 및 분석 (Gmail 필터 규칙)**: 실행 시 파라미터(예: `과제 0.4`)로 메일 검색 쿼리를 입력받습니다. 
+   - **수신 및 분석 (Gmail 필터 규칙)**: 실행 시 파라미터(예: 파이썬은 `과제 0.4`, 웹은 `assignment 0.4`)로 메일 검색 쿼리를 입력받습니다. 
+     - **과정별 키워드 분리**: 파이썬 과정은 제목에 반드시 **'과제'**가, 웹 과정은 **'assignment'**가 포함되어야 구분하여 각각의 시트에 채점이 가능합니다.
      - 넘겨진 쿼리값은 `settings.json`에 저장되어 다음 실행 시 디폴트 값으로 사용됩니다.
      - 사용자가 파라미터를 입력하지 않으면 `settings.json`의 기존(디폴트) 쿼리 값을 그대로 사용하여 타겟 이메일을 수집합니다.
      - **본인 메일 제외**: 스크립트 실행자 및 교강사 본인의 이메일(`wonhyukc@stu.ac.kr`) 발송분은 처리 대상에서 제외합니다.

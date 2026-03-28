@@ -83,15 +83,21 @@ def extract_grades(query=None):
         # 5. 날짜 파싱 및 마감(1점) 처리
         mail_dt = parse_email_date(date_str)
         score = 0
-        reason = "마감시간초과"
         formatted_date = "알수없음"
+        
+        # 쿼리에서 과제 번호 추출 (예: '과제 0.4 | assignment 0.4' -> '0.4')
+        q_match = re.search(r'\d+(?:\.\d+)?', current_query)
+        task_num = q_match.group(0) if q_match else ""
+        task_prefix = f"과제{task_num} " if task_num else "과제 "
+        
+        reason = f"{task_prefix.strip()} 마감시간초과"
         
         if mail_dt:
             # 출력 포맷: 3/27 18:30
             formatted_date = f"{mail_dt.month}/{mail_dt.day} {mail_dt.strftime('%H:%M')}"
             if mail_dt <= deadline_dt:
                 score = 1
-                reason = "메일제출기간내"
+                reason = f"{task_prefix.strip()} 기간내 제출"
                 
         output_rows.append([student_id, score, reason, formatted_date, name, short_subject])
         
