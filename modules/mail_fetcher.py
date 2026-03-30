@@ -18,6 +18,12 @@ def fetch_assignment_emails(query_string, max_results=100):
         headers = msg_detail['payload']['headers']
         
         subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+        
+        # 동일한 메일 스레드가 중복 수집되는 것을 방지하기 위해 회신(Re) 메일은 제외
+        subject_lower = subject.strip().lower()
+        if subject_lower.startswith('re:') or subject_lower.startswith('re '):
+            continue
+
         sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
         date_str = next((h['value'] for h in headers if h['name'].lower() == 'date'), 'Unknown Date')
         
