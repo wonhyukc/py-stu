@@ -16,7 +16,7 @@ fi
 # =======================================================
 echo "--> 1/4. Black 포매팅 검증 중..."
 # --check 플래그를 주어, 포맷이 맞지 않으면 실패(Exit 1)하도록 합니다.
-black --check .
+./.venv/bin/black --check .
 echo "✅ Black 포매팅 통과!"
 
 # =======================================================
@@ -24,8 +24,8 @@ echo "✅ Black 포매팅 통과!"
 # =======================================================
 echo "--> 2/4. Flake8 린팅 검사 중..."
 # E501(줄 길이) 등 일부 룰은 프로젝트에 맞게 Ignore 가능합니다.
-flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-flake8 . --count --max-complexity=10 --max-line-length=127 --statistics
+./.venv/bin/flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+./.venv/bin/flake8 . --count --max-complexity=10 --max-line-length=127 --statistics
 echo "✅ Flake8 린팅 통과!"
 
 # =======================================================
@@ -33,14 +33,14 @@ echo "✅ Flake8 린팅 통과!"
 # =======================================================
 echo "--> 3/4. Mypy 정적 타입 검사 중..."
 # 모든 기존 코드 변경이 아니면 기본 모드로 구동
-mypy . --ignore-missing-imports
+./.venv/bin/mypy . --ignore-missing-imports
 echo "✅ Mypy 타임 검사 통과!"
 
 # =======================================================
 # 4. 단위 테스트 (Pytest)
 # =======================================================
 echo "--> 4/4. Pytest 실행 중..."
-pytest
+./.venv/bin/pytest
 echo "✅ 유닛 테스트 통과!"
 
 echo "🎉 [Harness Check] 모든 검증을 성공적으로 마쳤습니다!"
