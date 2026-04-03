@@ -34,3 +34,17 @@
 5. Python 코드 내에서 API 연동 시 위임할 실제 이메일 계정 주소(`subject` 파라미터)를 명시하여 연결합니다.
 
 > **참고**: 일반 개인 계정(`@gmail.com`)은 도메인 정책 위임이 불가능하므로, 서비스 계정 대신 **OAuth 2.0 클라이언트 ID** 방식(사용자 동의 후 브라우저 연동)이나 **앱 비밀번호**(App Passwords) 방식을 사용해야 합니다.
+
+## 개발 및 테스트 환경 구축 (Harness Setup)
+프로젝트 코드를 수정하기 전, 다음의 과정으로 가상환경을 구성하고 테스트 도구를 설치해야 합니다. `bin/harness-check.sh` 등의 프리커밋 훅을 정상적으로 동작시키기 위한 필수 과정입니다.
+
+1. **가상환경 생성 및 활성화**:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. **테스트 패키지 설치**:
+   ```bash
+   pip install -r requirements-test.txt
+   ```
