@@ -1,138 +1,235 @@
 #!/usr/bin/env python3
 import sys
 import os
+import csv
+import argparse
+from collections import Counter
 
-# 상위 폴더의 modules 패키지를 import 하기 위한 설정
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-# 1prd.md 에 등재된 통합 폼 시트 ID
-SHEET_ID = "1_o-F6UaQ2WOe0nH2zuT_0xpwiOm1ebmWo2sEQzQptEk"
-GID = 427896056
+# Updated Unified Form Sheet
+SHEET_ID = "166MzQg-W6r9GEynt1bOlr8hUex0Rvx6Yky2ffSVNtKM"
+# If we need to target a specific GID, we can, but let's just grab the first sheet if GID is not strictly required.
+# GID 1491146932 is the response sheet.
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--course", type=str, default="py", help="Course prefix (e.g. py, wb)"
+    )
+    parser.add_argument(
+        "--week", type=str, default="06", help="Week number (e.g. 05, 06)"
+    )
+    parser.add_argument(
+        "--offline", action="store_true", help="Use local CSV (output/sample_data.csv)"
+    )
+    args = parser.parse_args()
+
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
 
-    print("🚀 [상호평가 스캔 및 이상치 점검 시작]")
-    try:
-        creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
-        service = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    except Exception as e:
-        print(f"❌ 인증 실패: {e}")
-        sys.exit(1)
+    print(f"🚀 [상호평가 다수결 채점 엔진 시작] {args.course}-{args.week}")
 
-    # gid 기반으로 sheet title 찾기
-    try:
-        sheet_metadata = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
-        sheet_title = None
-        for s in sheet_metadata.get("sheets", []):
-            if s["properties"].get("sheetId") == GID:
-                sheet_title = s["properties"]["title"]
-                break
+    values = []
+    if args.offline:
+        csv_path = os.path.join(base_dir, "output", "sample_data.csv")
+        print(f"📂 오프라인 모드: 로컬 CSV 읽기 ({csv_path})")
+        if not os.path.exists(csv_path):
+            print("❌ CSV 파일이 없습니다.")
+            sys.exit(1)
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            values = list(reader)
+    else:
+        try:
+            creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
+            service = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
-        if not sheet_title:
-            print(f"❌ 시트 ID({GID})를 찾을 수 없습니다.")
+            # Find the exact worksheet
+            sheet_metadata = (
+                service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+            )
+            target_gid = 1491146932
+            sheet_title = None
+            for s in sheet_metadata.get("sheets", []):
+                if s["properties"].get("sheetId") == target_gid:
+                    sheet_title = s["properties"]["title"]
+                    break
+
+            if not sheet_title:
+                sheet_title = sheet_metadata.get("sheets", [])[0]["properties"]["title"]
+
+            range_name = f"{sheet_title}!A:Z"
+            result = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=SHEET_ID, range=range_name)
+                .execute()
+            )
+            values = result.get("values", [])
+        except Exception as e:
+            print(f"❌ 구글 시트 오류: {e}")
             sys.exit(1)
 
-        print(f"✅ 대상 시트 발견: {sheet_title}")
-
-        range_name = f"{sheet_title}!A:Z"
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=SHEET_ID, range=range_name)
-            .execute()
-        )
-        values = result.get("values", [])
-    except Exception as e:
-        print(f"❌ 데이터 로드 실패: {e}")
-        sys.exit(1)
-
     if not values:
-        print("💡 시트에 데이터가 없습니다.")
+        print("💡 데이터가 없습니다.")
         return
 
     headers = values[0]
-    evaluator_idx = -1
-    target_idx = -1
+    evaluator_idx, target_idx = -1, -1
     score_idxs = []
 
     for i, h in enumerate(headers):
         h_str = str(h)
-        if ("학번 번호" in h_str or "Student ID" in h_str) and evaluator_idx == -1:
+        if (
+            ("학번" in h_str or "Student ID" in h_str)
+            and "평가자" in h_str
+            and evaluator_idx == -1
+        ):
             evaluator_idx = i
-        elif "피평가자" in h_str or "대상자" in h_str or "Reviewee" in h_str:
+        elif "제출자" in h_str or "피평가자" in h_str or "Reviewee" in h_str:
             target_idx = i
-        elif "평가" in h_str or "기준" in h_str or "점수" in h_str:
+        elif "Q" in h_str and ("점수" in h_str or "Score" in h_str):
             score_idxs.append(i)
 
-    # 1prd.md나 현재 시트 상태를 기반으로, 추가 컬럼이 없다고 하더라도 일단 프로세스를 진행
     if evaluator_idx == -1:
-        print(
-            "⚠️ '학번'이나 'Student ID' 컬럼을 찾지 못했습니다. 컬럼 헤더를 다시 확인해주세요."
-        )
-        evaluator_idx = 3  # 기본 fallback (0-indexed -> 3 is 4th col)
+        evaluator_idx = 3
+    if target_idx == -1:
+        target_idx = 4
+    if not score_idxs:
+        score_idxs = [5, 6, 7, 8, 9, 10, 11, 12, 13]  # fallback
 
-    outliers_detected = 0
-    valid_reviews = 0
+    # Filter to only requested week if offline (assuming column 2 is week)
+    # Actually, we just grade everyone in the sheet.
 
-    print("-" * 120)
-    print(
-        f"{'Evaluator (학번)':<20} | {'Reviewee (대상자)':<20} | {'Scores (이상치 포함)'}"
-    )
-    print("-" * 120)
+    # 1. Group data
+    # evals_by_target = { target_id: [ (evaluator_id, scores_array), ... ] }
+    # assigned_count = { evaluator_id: count } (How many evaluations they actually submitted)
+    evals_by_target = {}
+    assigned_count = {}
+
+    # Track maximum observed score per question globally to deduce "Max Score"
+    max_scores_per_q = [0.0] * len(score_idxs)
 
     for row in values[1:]:
-        if len(row) <= evaluator_idx:
+        if len(row) <= target_idx:
+            continue
+        evaluator = row[evaluator_idx].strip()
+        target = row[target_idx].strip()
+        if not evaluator or not target:
             continue
 
-        evaluator = row[evaluator_idx].strip()
-        target = (
-            row[target_idx].strip()
-            if target_idx != -1 and len(row) > target_idx
-            else "N/A"
-        )
-
         scores_given = []
-        has_outlier = False
-
-        for idx in score_idxs:
-            if len(row) > idx:
-                val = row[idx].strip()
-                scores_given.append(val)
-                # 이상치 규칙: 0 또는 1이 아닌 경우 (예: 2점 등)
-                if val not in ["0", "1"]:
-                    has_outlier = True
-            else:
-                scores_given.append("N/A")
-
-        if scores_given and has_outlier:
-            outliers_detected += 1
-            print(
-                print(
-                    f"\033[93m⚠️  Warning: [평가자 {evaluator}] -> [대상자 {target}] "
-                    f"이상치 점수 발견 ({scores_given}) (점수는 따로 처리하지 않고 통과)\033[0m"
-                )
+        for i, idx in enumerate(score_idxs):
+            val = (
+                float(row[idx].strip())
+                if len(row) > idx and row[idx].strip().replace(".", "", 1).isdigit()
+                else 0.0
             )
-        else:
-            if not scores_given:
-                # 평가 기준 컬럼이 아직 없는 경우
+            scores_given.append(val)
+            if val > max_scores_per_q[i]:
+                max_scores_per_q[i] = val
+
+        evals_by_target.setdefault(target, []).append((evaluator, scores_given))
+        assigned_count[evaluator] = assigned_count.get(evaluator, 0) + 1
+
+    total_max_submission_score = sum(max_scores_per_q)
+    if total_max_submission_score == 0:
+        total_max_submission_score = 1.0  # prevent div zero
+
+    # 2. Determine Majority and Evaluation Points
+    evaluator_points = {
+        e: 0.0 for e in assigned_count
+    }  # How many points they earned for grading
+    target_submission_score = {}  # Final evaluated score by majority
+
+    for target, evals in evals_by_target.items():
+        # count occurrences of each score array
+        score_tuples = [tuple(s) for _, s in evals]
+        counter = Counter(score_tuples)
+        majority_scores, majority_count = counter.most_common(1)[0]
+
+        has_majority = majority_count > (len(evals) // 2)
+
+        # Tie Breaker fallback: if 2 people tied, we just generously use the one with higher sum
+        if not has_majority:
+            # Sort by sum of scores descending
+            majority_scores = sorted(
+                counter.keys(), key=lambda s: sum(s), reverse=True
+            )[0]
+
+        target_submission_score[target] = sum(majority_scores)
+
+        for evaluator, scores in evals:
+            if tuple(scores) == majority_scores:
+                # Earn a piece of the 3 points
+                pct_weight = 3.0 / assigned_count[evaluator]
+                evaluator_points[evaluator] += pct_weight
+            else:
+                # Wrong! Gets 0 for this piece.
                 pass
 
-        if target != "N/A" or scores_given:
-            valid_reviews += 1
-            if not has_outlier:
-                print(f"{evaluator:<20} | {target:<20} | {scores_given}")
-
-    print("-" * 120)
-    print(
-        f"✅ 총 {valid_reviews} 건의 평가 데이터 스캔 완료. (발견된 이상치: {outliers_detected} 건)"
+    # 3. Calculate Final Combined Score
+    # For every student found in either target or evaluator pool
+    all_students = set(target_submission_score.keys()).union(
+        set(evaluator_points.keys())
     )
+
+    final_results = []
+    for sid in all_students:
+        s_score = target_submission_score.get(sid, 0.0)
+        e_score = evaluator_points.get(sid, 0.0)
+
+        # Submission weight 0.8
+        sub_ratio = (s_score / total_max_submission_score) * 0.8
+
+        # Evaluator weight 0.2 (Max 3 points)
+        eval_ratio = (min(e_score, 3.0) / 3.0) * 0.2
+
+        total_score = sub_ratio + eval_ratio
+
+        final_results.append(
+            {
+                "학번": sid,
+                "제출점수(가중치0.8)": round(sub_ratio, 3),
+                "평가점수(가중치0.2)": round(eval_ratio, 3),
+                "최종획득점수(1.0만점)": round(total_score, 3),
+                "수신받은원본총점": s_score,
+                "배정대비달성도": f"{round(e_score, 1)} / 3.0",
+            }
+        )
+
+    # 동일 제출자별로 정렬
+    final_results.sort(key=lambda x: x["학번"])
+
+    output_filename = f"{args.course}-{args.week}-peer-score.csv"
+    output_path = os.path.join(base_dir, "output", output_filename)
+
+    # Save to CSV
+    # Ensure output exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "학번",
+                "제출점수(가중치0.8)",
+                "평가점수(가중치0.2)",
+                "최종획득점수(1.0만점)",
+                "수신받은원본총점",
+                "배정대비달성도",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(final_results)
+
+    print(f"✅ 채점 완료. 결과 저장됨: {output_path}")
+    print(f"   => 저장 대상 학생 수: {len(final_results)}명")
 
 
 if __name__ == "__main__":
