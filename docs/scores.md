@@ -1,0 +1,1 @@
+/data/hyuk/prj/stu/stu2603/docs/scores.md
