@@ -5,9 +5,18 @@ import email.utils
 import sys
 
 
+def normalize_name_parts(name):
+    """괄호 안 내용이나 특수문자를 제거하고, 이름 단어들을 추출하여 Set으로 반환"""
+    name = re.sub(r'\(.*?\)', ' ', name)
+    name = re.sub(r'\[.*?\]', ' ', name)
+    name = re.sub(r'[^\w\s]', ' ', name)
+    return {p for p in name.lower().split() if p}
+
+
 def parse_students(filepath):
     students = {}
     name_to_id = {}
+    name_parts_to_id = []
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -29,39 +38,61 @@ def parse_students(filepath):
                     clean_kor = re.sub(r"\s+", "", kor_name)
                     if clean_kor:
                         name_to_id[clean_kor] = student_id
-    return students, name_to_id
+
+                    # Store parts mappings for fuzzy matching
+                    eng_parts = normalize_name_parts(eng_name)
+                    if eng_parts:
+                        name_parts_to_id.append((eng_parts, student_id))
+    return students, name_to_id, name_parts_to_id
 
 
 def main():
+    import json
+    import os
+
     # 1. Load students
     students = {}
     name_to_id = {}
+    name_parts_to_id = []
     for f in ["input/students/py-students.md", "input/students/wb-students.md"]:
         try:
-            s, n2i = parse_students(f)
+            s, n2i, p2i = parse_students(f)
             students.update(s)
             name_to_id.update(n2i)
+            name_parts_to_id.extend(p2i)
         except Exception as e:
             print(f"Error loading {f}: {e}")
+
+    # Load manual mappings cache if exists
+    manual_mappings = {}
+    if os.path.exists("input/manual_mapping.json"):
+        try:
+            with open("input/manual_mapping.json", "r", encoding="utf-8") as f:
+                manual_mappings = json.load(f)
+        except Exception as e:
+            print(f"Error loading manual mappings: {e}")
 
     # Add any manual mappings or emails already having IDs to name_to_id just in case
     # 2. Load deadline
     KST = timezone(timedelta(hours=9))
     deadlines = {}
-    with open("deadline.md", "r", encoding="utf-8") as f:
-        for line in f:
-            parts = line.strip().split("\t")
-            if len(parts) >= 2 and parts[0].isdigit():
-                week = int(parts[0])
-                date_str = parts[1].strip()
-                if date_str:
-                    try:
-                        # e.g. "3/29 0:00" -> 2026/3/29
-                        dt = datetime.strptime(f"2026/{date_str}", "%Y/%m/%d %H:%M")
-                        dt = dt.replace(tzinfo=KST)
-                        deadlines[week] = dt
-                    except ValueError:
-                        pass
+    try:
+        with open("input/deadline.md", "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 2 and parts[0].isdigit():
+                    week = int(parts[0])
+                    date_str = parts[1].strip()
+                    if date_str:
+                        try:
+                            # e.g. "3/29 0:00" -> 2026/3/29
+                            dt = datetime.strptime(f"2026/{date_str}", "%Y/%m/%d %H:%M")
+                            dt = dt.replace(tzinfo=KST)
+                            deadlines[week] = dt
+                        except ValueError:
+                            pass
+    except FileNotFoundError:
+        print("Warning: input/deadline.md not found. Deadline checking will be skipped.")
 
     # 3. Load emails
     emails = []
@@ -88,8 +119,27 @@ def main():
         clean_name = re.sub(r"\s+", "", name).lower()
 
         if not cur_id and not est_id:
-            if clean_name in name_to_id:
+            # First check manual mapping
+            if clean_name in manual_mappings:
+                row["추정하는 학번"] = manual_mappings[clean_name]
+            # Then exact match
+            elif clean_name in name_to_id:
                 row["추정하는 학번"] = name_to_id[clean_name]
+            else:
+                # Fuzzy match using name parts
+                email_parts = normalize_name_parts(name)
+                best_match = None
+                best_score = 0
+                for s_parts, s_id in name_parts_to_id:
+                    intersect = email_parts.intersection(s_parts)
+                    score = len(intersect)
+                    if score > 0 and score > best_score:
+                        best_score = score
+                        best_match = s_id
+                
+                # 단어 수가 2개 이상 일치하거나, 이메일 닉네임이 한 단어인데 일치하면 학번 추정
+                if best_score >= 2 or (len(email_parts) == 1 and best_score == 1):
+                    row["추정하는 학번"] = best_match
 
         effective_id = row["학번"].strip() or row["추정하는 학번"].strip()
         row["_effective_id"] = effective_id
