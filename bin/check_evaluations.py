@@ -217,7 +217,7 @@ def main():
     # Save to CSV
     # Ensure output exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=[
@@ -229,6 +229,7 @@ def main():
                 "수신받은원본총점",
                 "배정대비달성도",
             ],
+            quoting=csv.QUOTE_ALL
         )
         writer.writeheader()
         writer.writerows(final_results)
