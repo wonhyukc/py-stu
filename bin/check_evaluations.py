@@ -229,7 +229,7 @@ def main():
                 "수신받은원본총점",
                 "배정대비달성도",
             ],
-            quoting=csv.QUOTE_ALL
+            quoting=csv.QUOTE_MINIMAL
         )
         writer.writeheader()
         writer.writerows(final_results)
