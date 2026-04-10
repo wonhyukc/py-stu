@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+from modules.peer_grader import build_track_map
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # Updated Unified Form Sheet
@@ -32,6 +33,8 @@ def main():
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
+    
+    track_map = build_track_map(base_dir)
 
     print(f"🚀 [상호평가 다수결 채점 엔진 시작] {args.course}-{args.week}")
 
@@ -195,6 +198,7 @@ def main():
 
         final_results.append(
             {
+                "분반": track_map.get(sid, ""),
                 "학번": sid,
                 "제출점수(가중치0.8)": round(sub_ratio, 3),
                 "평가점수(가중치0.2)": round(eval_ratio, 3),
@@ -217,6 +221,7 @@ def main():
         writer = csv.DictWriter(
             f,
             fieldnames=[
+                "분반",
                 "학번",
                 "제출점수(가중치0.8)",
                 "평가점수(가중치0.2)",

@@ -53,3 +53,32 @@ def normalize_final_scores(target_pts, evaluator_earned_pts, total_max_sub_score
     eval_ratio = (min(evaluator_earned_pts, 3.0) / 3.0) * 0.2
 
     return sub_ratio, eval_ratio, sub_ratio + eval_ratio
+
+
+def build_track_map(base_dir):
+    import os
+    track_map = {}
+    
+    def parse_md(filepath, track_name):
+        if not os.path.exists(filepath):
+            return
+        with open(filepath, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        headers = []
+        for line in lines:
+            line = line.strip()
+            if not line.startswith("|"): continue
+            cols = [c.strip() for c in line.split("|")[1:-1]]
+            if not headers and "학번" in line:
+                headers = cols
+                continue
+            if len(cols) == 0 or "---" in line: continue
+            if headers and len(cols) >= len(headers):
+                row_dict = dict(zip(headers, cols))
+                if "학번" in row_dict and row_dict["학번"]:
+                    track_map[row_dict["학번"]] = track_name
+
+    parse_md(os.path.join(base_dir, "input", "students", "py-students.md"), "py")
+    parse_md(os.path.join(base_dir, "input", "students", "wb-students.md"), "wb")
+    
+    return track_map
