@@ -204,7 +204,7 @@ def main():
                 "평가점수(가중치0.2)": round(eval_ratio, 3),
                 "최종획득점수(1.0만점)": round(total_score, 3),
                 "수신받은원본총점": s_score,
-                "배정대비달성도": f"{round(e_score, 1)} / 3.0",
+                "배정대비달성도": round(e_score, 1),
             }
         )
 
