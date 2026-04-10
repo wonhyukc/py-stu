@@ -76,7 +76,7 @@ def build_track_map(base_dir):
             if headers and len(cols) >= len(headers):
                 row_dict = dict(zip(headers, cols))
                 if "학번" in row_dict and row_dict["학번"]:
-                    track_map[row_dict["학번"]] = track_name
+                    track_map[row_dict["학번"]] = row_dict.get("강좌번호", track_name)
 
     parse_md(os.path.join(base_dir, "input", "students", "py-students.md"), "py")
     parse_md(os.path.join(base_dir, "input", "students", "wb-students.md"), "wb")
