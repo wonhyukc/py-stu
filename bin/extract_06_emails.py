@@ -127,12 +127,22 @@ def main():
                 score = 2
                 reason = "정확한 양식/첨부없음(+2)"
             elif any_assignment_re.search(clean_sub):
-                # Valid but rule violated (missing ID in subject, has attachment, or just says "과제/0.6")
-                score = 1
-                violations = []
-                if not m_strict: violations.append("양식오류")
-                if has_att: violations.append("첨부있음")
-                reason = f"양식위반({','.join(violations)}) (+1)"
+                # Check if it mentions explicitly a DIFFERENT week (e.g. 0.5, 0.4, 0.7)
+                diff_week_match = re.search(r"0?\.([0-57-9])", clean_sub)
+                is_this_week = "0.6" in clean_sub or not diff_week_match
+                
+                if is_this_week:
+                    # Valid but rule violated (missing ID in subject, has attachment, or just says "과제/0.6")
+                    score = 1
+                    violations = []
+                    if not m_strict: violations.append("양식오류")
+                    if has_att: violations.append("첨부있음")
+                    reason = f"양식위반({','.join(violations)}) (+1)"
+                else:
+                    # Mentions another week explicitly
+                    score = 0
+                    reason = "타주차 과제(수동확인)"
+                    task_type = "기타"
                     
         row = {
             "학번": est_id,
