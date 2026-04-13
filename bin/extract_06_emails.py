@@ -42,14 +42,16 @@ def main():
     name_to_id, id_to_track = parse_students()
     
     KST = timezone(timedelta(hours=9))
+    start_dt = datetime(2026, 4, 6, 9, 0, tzinfo=KST)
     deadline_06 = datetime(2026, 4, 13, 9, 0, tzinfo=KST)
     
-    print("Fetching emails for assignment 0.6...")
-    # Add strong rules for fetching
-    new_emails = fetch_assignment_emails("after:2026/04/01 (과제 OR assignment) 0.6", max_results=500)
+    print("Fetching emails from 2026/04/06 09:00 to 2026/04/13 09:00...")
+    # Fetch wider range and filter precisely in Python (search limits to day scale)
+    new_emails = fetch_assignment_emails("after:2026/04/05 before:2026/04/14 -from:comments-noreply@docs.google.com", max_results=1000)
     
-    # rule: 과제 or assignment 0.x (specifically 0.6)
+    # rule: 과제 or assignment 0.x
     strict_re = re.compile(r"(과제|assignment)\s*0?\.6(?:(?:\[|\()?(\d{10})(?:\]|\))?)?")
+    any_assignment_re = re.compile(r"(과제|assignment)")
     
     new_rows = []
     
@@ -68,17 +70,41 @@ def main():
         except Exception:
             pass
             
-        # Only within deadline
-        if email_dt is None or email_dt > deadline_06:
+        # Ignore if missing date
+        if email_dt is None:
             continue
             
-        # Strict naming: 과제 or assignment 0.6
-        clean_sub = re.sub(r"\s+", "", subject.lower())
-        m = strict_re.search(clean_sub)
-        if not m:
+        # Rule 1: Limit strictly to Last Mon 09:00 - Today 09:00
+        if not (start_dt <= email_dt <= deadline_06):
             continue
             
-        est_id = m.group(2) if len(m.groups()) >= 2 and m.group(2) else ""
+        # Rule 2 & 3: Blacklist strings
+        subject_lower = subject.lower()
+        if "was edited" in subject_lower:
+            continue
+        if "comments-noreply@docs.google.com" in sender.lower():
+            continue
+            
+        clean_sub = re.sub(r"\s+", "", subject_lower)
+        m_strict = strict_re.search(clean_sub)
+        
+        # Determine Point & Type
+        score = 0
+        reason = "수동 확인 요망(양식불일치/타주차)"
+        task_type = "기타"
+        
+        if m_strict:
+            score = 2
+            reason = "제목양식준수(+2)"
+            task_type = "0.6"
+            est_id = m_strict.group(2) if len(m_strict.groups()) >= 2 and m_strict.group(2) else ""
+        else:
+            # Check if it even is an assignment
+            if not any_assignment_re.search(clean_sub) and not re.search(r"\d{10}", subject):
+                continue # Ignore pure personal/spam emails
+            est_id = ""
+        
+        # ID Estimation for 0 markers
         if not est_id:
             sender_name = sender.split("<")[0].strip()
             clean_name = re.sub(r"\s+", "", sender_name).lower()
@@ -93,9 +119,9 @@ def main():
             "학번": est_id,
             "추정하는학번": est_id,
             "track": id_to_track.get(est_id, ""),
-            "점수": 1,
-            "유형": "0.6",
-            "이유": "제목양식(+1) 기한내(+1)",
+            "점수": score,
+            "유형": task_type,
+            "이유": reason,
             "날짜": date_str,
             "이름": sender.split("<")[0].strip(),
             "메일제목": subject,
@@ -103,7 +129,7 @@ def main():
         
         new_rows.append(row)
         
-    print(f"Found {len(new_rows)} emails for 0.6.")
+    print(f"Found {len(new_rows)} relevant emails in the specified range.")
     
     if new_rows:
         os.makedirs("output", exist_ok=True)

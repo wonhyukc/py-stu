@@ -15,13 +15,13 @@ def test_extract_06_emails():
     
     # Mock emails
     mock_emails = [
-        # Valid: exact subject, on time
+        # Valid: exact subject, on time (2 points)
         {
             "subject": "과제 0.6",
             "date_str": "Mon, 13 Apr 2026 08:30:00 +0900",
             "sender": "gildong <gildong@test.com>"
         },
-        # Valid: assignment 0.6 with ID, on time
+        # Valid: assignment 0.6 with ID, on time (2 points)
         {
             "subject": "assignment 0.6 [2026222222]",
             "date_str": "Mon, 13 Apr 2026 08:59:59 +0900",
@@ -33,11 +33,17 @@ def test_extract_06_emails():
             "date_str": "Mon, 13 Apr 2026 09:00:01 +0900",
             "sender": "gildong <gildong@test.com>"
         },
-        # Invalid: wrong subject
+        # Valid but wrong week: formatting issue, gets 0 points
         {
             "subject": "과제 0.5",
             "date_str": "Mon, 13 Apr 2026 08:00:00 +0900",
             "sender": "gildong <gildong@test.com>"
+        },
+        # Invalid: ignores "was edited" docs updates
+        {
+            "subject": "Document was edited recently",
+            "date_str": "Sun, 12 Apr 2026 08:00:00 +0900",
+            "sender": "docs <comments-noreply@docs.google.com>"
         }
     ]
     
@@ -51,12 +57,20 @@ def test_extract_06_emails():
         assert os.path.exists("output/mail06.csv")
         with open("output/mail06.csv", "r", encoding="utf-8") as f:
             reader = list(csv.DictReader(f))
-            assert len(reader) == 2
+            assert len(reader) == 3 # includes the 0.5 one!
             
+            # Correct week 0.6 formats
             assert reader[0]["학번"] == "2026111111"
             assert reader[0]["유형"] == "0.6"
-            assert reader[0]["메일제목"] == "과제 0.6"
+            assert reader[0]["점수"] == "2"
             
             assert reader[1]["학번"] == "2026222222"
-            assert reader[1]["메일제목"] == "assignment 0.6 [2026222222]"
-if __name__ == '__main__': test_extract_06_emails()
+            assert reader[1]["점수"] == "2"
+            
+            # Wrong week, but assignment related
+            assert reader[2]["점수"] == "0"
+            assert reader[2]["유형"] == "기타"
+            assert reader[2]["이름"] == "gildong"
+
+if __name__ == '__main__':
+    test_extract_06_emails()
