@@ -7,9 +7,9 @@ import sys
 
 def normalize_name_parts(name):
     """괄호 안 내용이나 특수문자를 제거하고, 이름 단어들을 추출하여 Set으로 반환"""
-    name = re.sub(r'\(.*?\)', ' ', name)
-    name = re.sub(r'\[.*?\]', ' ', name)
-    name = re.sub(r'[^\w\s]', ' ', name)
+    name = re.sub(r"\(.*?\)", " ", name)
+    name = re.sub(r"\[.*?\]", " ", name)
+    name = re.sub(r"[^\w\s]", " ", name)
     return {p for p in name.lower().split() if p}
 
 
@@ -92,7 +92,9 @@ def main():
                         except ValueError:
                             pass
     except FileNotFoundError:
-        print("Warning: input/deadline.md not found. Deadline checking will be skipped.")
+        print(
+            "Warning: input/deadline.md not found. Deadline checking will be skipped."
+        )
 
     # 3. Load emails
     emails = []
@@ -136,7 +138,7 @@ def main():
                     if score > 0 and score > best_score:
                         best_score = score
                         best_match = s_id
-                
+
                 # 단어 수가 2개 이상 일치하거나, 이메일 닉네임이 한 단어인데 일치하면 학번 추정
                 if best_score >= 2 or (len(email_parts) == 1 and best_score == 1):
                     row["추정하는 학번"] = best_match

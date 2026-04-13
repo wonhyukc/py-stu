@@ -34,7 +34,7 @@ def main():
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
-    
+
     track_map = build_track_map(base_dir)
 
     print(f"🚀 [상호평가 다수결 채점 엔진 시작] {args.course}-{args.week}")
@@ -239,7 +239,7 @@ def main():
                 "수신받은원본총점",
                 "배정대비달성도",
             ],
-            quoting=csv.QUOTE_MINIMAL
+            quoting=csv.QUOTE_MINIMAL,
         )
         writer.writeheader()
         writer.writerows(final_results)
