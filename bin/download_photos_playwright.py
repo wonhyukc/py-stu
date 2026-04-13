@@ -29,33 +29,59 @@ def download_photos():
             channel="chrome",
             args=["--disable-blink-features=AutomationControlled"],
         )
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ),
-            accept_downloads=True,
+
+        state_file = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../.bin/playwright_state.json")
         )
+        use_saved_state = os.path.exists(state_file)
+
+        context_options = {
+            "user_agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "accept_downloads": True,
+        }
+        if use_saved_state:
+            print(f"저장된 인증 세션({state_file})을 불러옵니다...")
+            context_options["storage_state"] = state_file
+
+        context = browser.new_context(**context_options)
         page = context.new_page()
 
         print("Navigating to mail.google.com...")
         page.goto("https://mail.google.com/")
-        print(
-            ">>> 브라우저가 화면에 팝업되었습니다. 직접 로그인해주세요! (최대 3분 대기합니다) <<<"
-        )
 
-        try:
-            page.wait_for_selector('input[name="q"]', timeout=180000)
-            print("로그인 확인 완료! 받은편지함 진입 성공.")
-        except Exception:
-            print("3분 내에 로그인이 확인되지 않거나 Inbox를 렌더링하지 못했습니다.")
-            browser.close()
-            return
+        if use_saved_state:
+            try:
+                page.wait_for_selector('input[name="q"]', timeout=8000)
+                print("저장된 세션으로 로그인 상태 검증 성공!")
+            except Exception:
+                print("저장된 세션이 만료되었습니다. 다시 로그인을 진행해야 합니다.")
+                use_saved_state = False
+
+        if not use_saved_state:
+            print(
+                ">>> 브라우저가 화면에 팝업되었습니다. 직접 로그인해주세요! (최대 3분 대기합니다) <<<"
+            )
+            try:
+                page.wait_for_selector('input[name="q"]', timeout=180000)
+                print("로그인 확인 완료! 받은편지함 진입 성공.")
+                os.makedirs(os.path.dirname(state_file), exist_ok=True)
+                context.storage_state(path=state_file)
+                print("새로운 로그인 세션을 저장했습니다.")
+            except Exception as e:
+                print(
+                    f"3분 내에 로그인이 확인되지 않거나 화면 렌더링(input[name='q'])을 기다리는 중 오류가 발생했습니다. 원인: {e}"
+                )
+                browser.close()
+                return
 
         page.wait_for_timeout(2000)
 
-        # 0.6 주차 과제 및 이미지 첨부파일 대상 검색 (50KB 이상 크기 지정으로 서명 및 아주 작은 불필요 이미지 스킵)
-        query = '("과제" OR "0.6") has:attachment larger:50K '
+        # 0.6 주차 과제 및 이미지 첨부파일 대상 검색 (답장/전달 제외)
+        query = "has:attachment larger:50K -subject:re -subject:fwd -subject:fw "
         search_query = (
             query
             + "(filename:jpg OR filename:png OR filename:jpeg OR filename:gif) after:2026/04/05"
@@ -90,6 +116,24 @@ def download_photos():
                     )
                     sender_email = sender_loc.first.get_attribute("email") or ""
 
+                # 제목 추출 (스레드 처리된 경우 Re: 등이 숨김될 수 있으나 최대한 표출)
+                subject_loc = row.locator("span.bog")
+                subject_text = ""
+                if subject_loc.count() > 0:
+                    subject_text = subject_loc.first.inner_text().strip()
+
+                # 답장, 전달 메일 건너뛰기 (이미 쿼리에 포함됐으나 이중 방어망)
+                subj_lower = subject_text.lower()
+                if (
+                    subj_lower.startswith(("re:", "fw:", "fwd:"))
+                    or "[re]" in subj_lower
+                    or "[fw]" in subj_lower
+                ):
+                    print(
+                        f"[{i+1}/{count}] 패스 (답장/전달): {sender_name} | {subject_text}"
+                    )
+                    continue
+
                 # 리스트 화면에서 진짜 첨부파일 아이콘이 있는지 확인 (서명 이미지 등 무시)
                 has_att = (
                     row.locator("img.yE").count() > 0
@@ -100,46 +144,62 @@ def download_photos():
                 )
 
                 if not has_att:
-                    print(f"[{i+1}/{count}] 패스 (명시적 첨부파일 없음): {sender_name}")
+                    print(
+                        f"[{i+1}/{count}] 패스 (명시적 첨부파일 없음): {sender_name} | {subject_text}"
+                    )
                     continue
 
-                print(f"[{i+1}/{count}] 클릭하여 메일 열기: {sender_name}")
-                # tr 대신 안전하게 제목 영역(span.bog) 또는 날짜 영역을 클릭합니다.
-                click_target = row.locator("span.bog").first
-                if click_target.count() == 0:
-                    click_target = row.locator("td.xW").first
+                print(
+                    f"[{i+1}/{count}] 클릭하여 메일 열기: {sender_name} | {subject_text}"
+                )
 
-                # 강제 클릭(force) 시도
-                click_target.click(force=True)
-                page.wait_for_timeout(2000)
-                page.wait_for_load_state("networkidle", timeout=5000)
+                try:
+                    # 안전하게 전체 row 클릭 (JS 기반)
+                    row.evaluate("el => el.click()")
+                except Exception:
+                    pass
+
+                page.wait_for_timeout(3000)
+
+                # [중요 방어] 메일 스레드(대화형 보기)로 묶여 예전 사진이 접힌 경우, 이미지 다운로더가 DOM을 찾지 못합니다.
+                # 이를 막기 위해 열린 화면에서 접힌 부분을 강제로 누릅니다.
+                try:
+                    page.evaluate("""() => {
+                        // 1. 우측 상단 '모든 이메일 펼치기', 'Expand all' 클릭
+                        const qs = '[aria-label="모든 메일 펼치기"], [aria-label="모두 펼치기"], ' +
+                                   '[aria-label="Expand all"], [data-tooltip="모두 펼치기"], ' +
+                                   '[data-tooltip="Expand all"]';
+                        const expandBtns = document.querySelectorAll(qs);
+                        for(let b of expandBtns) { b.click(); }
+
+                        // 2. 개별적으로 접힌 헤더 강제 클릭 (Gmail UI 트리거)
+                        const collapsed = document.querySelectorAll('div[data-message-id][aria-expanded="false"]');
+                        for(let c of collapsed) { c.click(); }
+                    }""")
+                    page.wait_for_timeout(2000)
+                except Exception:
+                    pass
+                # 제거: page.wait_for_load_state("networkidle", timeout=5000) -- Gmail과 같은 SPA에서는 백그라운드 소켓 연결 탓에 항상 에러 발생 가능
 
                 # 메시지 렌더링을 위해 페이지 아래로 스크롤
                 page.mouse.wheel(0, 5000)
                 page.wait_for_timeout(2000)
 
-                # Gmail은 첨부파일 컨테이너에 download_url 이라는 속성을 숨겨둡니다.
-                # 속성 형식: "image/jpeg:filename.jpg:https://mail.google.com/mail/..."
+                # 기존 JS DOM [download_url] 우회 방식 사용 (가장 안정적)
                 download_urls_data = page.evaluate("""() => {
                     const elements = document.querySelectorAll('[download_url]');
                     const urls = [];
                     elements.forEach(el => {
                         urls.push(el.getAttribute('download_url'));
                     });
-
-                    // a 태그 중에 첨부파일 다운로드 링크가 있는 경우도 백업으로 추출
                     const aTags = document.querySelectorAll('a[href*="disp=safe"]');
                     aTags.forEach(a => {
                         urls.push("unknown:unknown:" + a.href);
                     });
-
                     return urls;
                 }""")
 
-                # 중복 제거
                 download_urls_data = list(set(download_urls_data))
-
-                # 실제 이미지 파일들만 선별
                 valid_downloads = []
                 for data in download_urls_data:
                     parts = data.split(":", 2)
@@ -158,22 +218,29 @@ def download_photos():
                         or ".gif" in url_lower
                         or "disp=safe" in url_lower
                     ):
-                        valid_downloads.append((fname, url))
+                        try:
+                            with page.expect_download(timeout=15000) as download_info:
+                                page.evaluate(f'window.location.href = "{url}";')
+                            download = download_info.value
 
-                print(f"   -> 발견된 사진 다운로드 링크 수: {len(valid_downloads)}")
+                            real_fname = (
+                                fname
+                                if fname != "unknown"
+                                else download.suggested_filename
+                            )
+                            # 다운로드된 파일의 확장자가 이미지인지 필터링 (docx 등 무시)
+                            if real_fname.lower().endswith(
+                                (".jpg", ".jpeg", ".png", ".gif")
+                            ):
+                                valid_downloads.append((real_fname, download))
+                            else:
+                                download.cancel()
+                        except Exception:
+                            continue
 
-                for idx, (original_name, dl_url) in enumerate(valid_downloads):
-                    # 다운로드 URL로 직접 접근하여 다운로드 트리거
-                    with page.expect_download(timeout=15000) as download_info:
-                        page.evaluate(f'window.location.href = "{dl_url}";')
+                print(f"   -> 유효한 사진 다운로드 수: {len(valid_downloads)}")
 
-                    download = download_info.value
-                    final_original_name = (
-                        original_name
-                        if original_name != "unknown"
-                        else download.suggested_filename
-                    )
-
+                for idx, (final_original_name, download) in enumerate(valid_downloads):
                     # 파일 이름에 학생 이름이 있는지 확인
                     has_name = False
                     clean_filename = re.sub(r"\s+", "", final_original_name).lower()
