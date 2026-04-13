@@ -1,50 +1,67 @@
-# py-stu
-학생들의 성적과 과제를 처리하기 위한 Python 프로젝트입니다.
+# py-stu (학생 평가 관리 시스템)
 
-## 주요 기능
-- 구글 시트 연동을 통한 성적 및 과제 데이터 관리
-- 이메일 발송 자동화 (Google API 연동)
-- `secret.json` credential을 통한 안전한 API 접근
+학생들의 성적과 과제 제출 내역을 자동으로 수집(Gmail)하고, 채점 결과를 구글 시트(Google Sheets)에 연동하여 관리하는 Python 백엔드 자동화 프로젝트입니다.
 
-## 대상 과목 및 학생 데이터 (`students/`)
-- **Python (파이썬)**: `students/py-students.md`
-- **Web (웹 프로그래밍)**: 2개 분반으로 구성되어 운영됩니다. `students/wb-students.md`
-- **전체 시간표**: `students/timetable.md`
+## 🎯 주요 기능
+- **이메일 자동 수집 및 채점**: 수신된 이메일의 제목 키워드(`과제`, `assignment`)를 파싱하여 학번을 식별하고, 제출 시간에 따라 자동으로 채점(CSV 추출)
+- **구글 시트 연동**: 채점된 대상 데이터(예: `score1.csv`)를 학생별/과목별 구글 스프레드시트에 자동으로 Append(추가) 기록
+- **안전한 인증 관리**: `secret.json` 등 인증 파일을 활용한 백그라운드 봇 환경 구축
 
-## 인증 키 발급 방법 (`secret.json`)
-프로젝트에서 Google API (구글 시트 및 이메일 연동)를 사용하기 위해서는 `secret.json` 형태의 인증키가 필요합니다. 다음 과정을 통해 발급받으세요:
+---
 
-1. [Google Cloud Console](https://console.cloud.google.com/)에 접속하여 프로젝트를 생성하거나 선택합니다.
-2. 사이드바에서 **API 및 서비스** > **라이브러리**로 이동하여 사용할 API(예: **Google Sheets API**, **Gmail API** 등)를 검색하고 사용 설정합니다.
-3. **API 및 서비스** > **사용자 인증 정보(Credentials)** 메뉴로 이동합니다.
-4. 상단의 **사용자 인증 정보 만들기**를 클릭하고 **서비스 계정(Service Account)**을 선택합니다.
-5. 서비스 계정 이름 및 세부 정보를 입력하고 생성합니다. (필요 시 역할 부여)
-6. 생성된 서비스 계정 목록에서 해당 계정을 클릭하여 상세 페이지로 이동합니다.
-7. 상단 탭에서 **키(Keys)**를 선택합니다.
-8. **키 추가** > **새 키 만들기**를 클릭하고 키 유형을 **JSON**으로 선택하여 생성(다운로드)합니다.
-9. 다운로드된 파일의 이름을 `secret.json`으로 변경하고, 본 프로젝트의 루트 경로(`.gitignore` 등 소스관리에 포함되지 않도록 주의)에 위치시킵니다.
+## 📂 주요 디렉터리 및 데이터
 
-### ⚠️ Gmail API 사용 시 추가 설정 (서비스 계정 위임)
-서비스 계정(`secret.json`)을 통해 기관/개인 이메일 계정으로 Gmail 접근 및 메일 전송을 하려면 **도메인 전체 위임(Domain-Wide Delegation)**이 필수적으로 설정되어야 합니다.
+- `students/`: 대상 과목 및 학생, 시간표 메타데이터
+  - `py-students.md`: 파이썬 분반 목록
+  - `wb-students.md`: 웹 프로그래밍 2개 분반 목록
+  - `timetable.md`: 전체 시간표
+- `modules/`: 기능별(구글 시트, 이메일 파싱 등) 독립 모듈
+- `bin/`: 프로젝트 린트 및 무결성 검증을 위한 하네스 스크립트 모음 (`harness-check.sh` 등)
 
-1. **Google Workspace 관리자 콘솔**에 로그인합니다.
-2. **보안** > **액세스 및 데이터 관리** > **API 관리** > **도메인 전체 위임** 메뉴로 이동합니다.
-3. **새로 추가**를 클릭하고, 발급받은 서비스 계정의 **클라이언트 ID**(유니크 ID 번호)를 입력합니다.
-4. OAuth 범위에 `https://mail.google.com/` 등을 추가하고 승인합니다.
-5. Python 코드 내에서 API 연동 시 위임할 실제 이메일 계정 주소(`subject` 파라미터)를 명시하여 연결합니다.
+---
 
-> **참고**: 일반 개인 계정(`@gmail.com`)은 도메인 정책 위임이 불가능하므로, 서비스 계정 대신 **OAuth 2.0 클라이언트 ID** 방식(사용자 동의 후 브라우저 연동)이나 **앱 비밀번호**(App Passwords) 방식을 사용해야 합니다.
+## 🔐 인증 및 자격 증명 (Credentials)
 
-## 개발 및 테스트 환경 구축 (Harness Setup)
-프로젝트 코드를 수정하기 전, 다음의 과정으로 가상환경을 구성하고 테스트 도구를 설치해야 합니다. `bin/harness-check.sh` 등의 프리커밋 훅을 정상적으로 동작시키기 위한 필수 과정입니다.
+프로젝트 내 Google API 통합을 위해 환경에 따라 다음과 같은 인증 파일이 요구될 수 있습니다. (주로 `secret.json` 사용)
 
-1. **가상환경 생성 및 활성화**:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
+| 파일명 | 용도 및 설명 |
+|---|---|
+| **`secret.json`** | **(메인)** 사용자의 개입 없는 백그라운드 환경용 서비스 계정 개인키입니다. 타겟 스프레드시트에 편집자 권한으로 계정 이메일을 공유해야 쓰기가 가능합니다. |
+| **`credentials.json`** | 관리자(교강사) 계정으로 인증 절차를 밟기 위한 OAuth 2.0 클라이언트 ID 파일입니다. |
+| **`token.json`** | `credentials.json` 최초 인증 후 발급받아 재사용하는 권한 갱신용 접속 토큰 파일입니다. |
 
-2. **테스트 패키지 설치**:
-   ```bash
-   pip install -r requirements-test.txt
-   ```
+> ⚠️ **보안 주의**: 모든 인증 JSON 파일은 절대 Git 저장소에 포함되지 않도록 `.gitignore`에 등록하여 관리해야 하며, AI 에이전트의 접근도 엄격히 제한됩니다.
+
+---
+
+## ⚙️ 개발 및 환경 설정 (Getting Started)
+
+프로젝트를 로컬에 세팅하고 코드를 변경하려면 반드시 아래의 절차를 통해 하네스(Harness) 검증 환경을 갖춰야 합니다.
+
+### 1. 가상환경 구성
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+### 2. 의존성 패키지 설치
+```bash
+pip install -r requirements-test.txt
+```
+
+### 3. 하네스(Harness) 무결성 체크
+코드나 스크립트를 수정한 후에는 코드를 실행하기 전 반드시 내장된 스크립트를 통해 문법 오류 여부를 검증해야 합니다. (SSOT 기준 원칙 적용)
+```bash
+bin/harness-check.sh
+```
+
+---
+
+## 🛠 Google API 환경 세팅 가이드 (서비스 계정 발급)
+
+1. **[Google Cloud Console](https://console.cloud.google.com/)** 접속 및 구글 클라우드 프로젝트 생성
+2. `API 및 서비스` > `라이브러리`에서 **Google Sheets API** 및 **Gmail API** (필요시) 사용 설정
+3. `사용자 인증 정보` 메뉴에서 **서비스 계정(Service Account)** 생성
+4. 계정 상세 탭에서 **새 키(JSON)**를 생성 및 다운로드 후 파일명을 `secret.json`으로 변경하여 프로젝트 루트에 저장
+5. 스프레드시트 우측 상단 '공유' 버튼을 눌러, 생성한 서비스 계정 메일 주소(예: `@...iam.gserviceaccount.com`)를 **[편집자]** 권한으로 추가
+6. _(선택: 학교/기관 계정 메일 제어 시)_ Google Workspace 관리자 콘솔에서 해당 클라이언트 ID에 대해 **도메인 전체 위임(Domain-Wide Delegation)** 부여 필수

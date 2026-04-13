@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from modules.peer_grader import build_track_map
+from modules.match_assigner import parse_markdown_table
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # Updated Unified Form Sheet
@@ -182,6 +183,15 @@ def main():
     all_students = set(target_submission_score.keys()).union(
         set(evaluator_points.keys())
     )
+
+    md_path = os.path.join(base_dir, "input", "students", f"{args.course}-students.md")
+    if os.path.exists(md_path):
+        roster_data = parse_markdown_table(md_path)
+        valid_students = {row.get("학번", "") for row in roster_data if row.get("학번")}
+        all_students = all_students.intersection(valid_students)
+        print(
+            f"📊 {args.course} 트랙 학생 명부 {len(valid_students)}명 기준 교집합 필터링: {len(all_students)}명 대상"
+        )
 
     final_results = []
     for sid in all_students:
