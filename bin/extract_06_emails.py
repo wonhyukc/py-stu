@@ -46,12 +46,15 @@ def main():
     deadline_06 = datetime(2026, 4, 13, 9, 0, tzinfo=KST)
     
     print("Fetching emails from 2026/04/06 09:00 to 2026/04/13 09:00...")
-    # Fetch wider range and filter precisely in Python (search limits to day scale)
-    new_emails = fetch_assignment_emails("after:2026/04/05 before:2026/04/14 -from:comments-noreply@docs.google.com", max_results=1000)
+    search_base = "after:2026/04/05 before:2026/04/14 -from:comments-noreply@docs.google.com"
+    new_emails = fetch_assignment_emails(search_base, max_results=1000)
     
-    # rule: 과제 or assignment 0.x
-    strict_re = re.compile(r"(과제|assignment)\s*0?\.6(?:(?:\[|\()?(\d{10})(?:\]|\))?)?")
-    any_assignment_re = re.compile(r"(과제|assignment)")
+    emails_with_att = fetch_assignment_emails(search_base + " has:attachment", max_results=1000)
+    att_msg_ids = set(e["message_id"] for e in emails_with_att)
+    
+    # rule: 과제 or assignment 0.x (학번 필수 - 10자리 숫자)
+    strict_re = re.compile(r"(과제|assignment)\s*0?\.6\s*(?:\[|\()?(\d{10})(?:\]|\))?")
+    any_assignment_re = re.compile(r"(과제|assignment|0?\.6)")
     
     new_rows = []
     
@@ -59,6 +62,8 @@ def main():
         subject = email_data["subject"].strip()
         date_str = email_data["date_str"].strip()
         sender = email_data["sender"].strip()
+        msg_id = email_data["message_id"]
+        has_att = msg_id in att_msg_ids
         
         email_dt = None
         try:
@@ -88,23 +93,9 @@ def main():
         clean_sub = re.sub(r"\s+", "", subject_lower)
         m_strict = strict_re.search(clean_sub)
         
-        # Determine Point & Type
-        score = 0
-        reason = "수동 확인 요망(양식불일치/타주차)"
-        task_type = "기타"
-        
-        if m_strict:
-            score = 2
-            reason = "제목양식준수(+2)"
-            task_type = "0.6"
-            est_id = m_strict.group(2) if len(m_strict.groups()) >= 2 and m_strict.group(2) else ""
-        else:
-            # Check if it even is an assignment
-            if not any_assignment_re.search(clean_sub) and not re.search(r"\d{10}", subject):
-                continue # Ignore pure personal/spam emails
-            est_id = ""
-        
-        # ID Estimation for 0 markers
+        # Determine Student ID (Est ID) First
+        # If strict matches, it has the ID in group 2
+        est_id = m_strict.group(2) if m_strict else ""
         if not est_id:
             sender_name = sender.split("<")[0].strip()
             clean_name = re.sub(r"\s+", "", sender_name).lower()
@@ -114,6 +105,34 @@ def main():
                 m_id = re.search(r"\d{10}", subject)
                 if m_id:
                     est_id = m_id.group(0)
+
+        # Check if it even is an assignment (filter out pure personal/spam emails)
+        if not any_assignment_re.search(clean_sub) and not est_id:
+            continue
+            
+        # Determine Point & Type
+        score = 0
+        reason = "수동 확인 요망(양식불일치/타주차)"
+        task_type = "기타"
+        
+        # Rule: 학생을 찾을 수 없으면 0점 처리
+        if not est_id or est_id not in id_to_track:
+            score = 0
+            reason = "학번 식별 불가"
+            task_type = "기타"
+        else:
+            task_type = "0.6" # It's matched to a student within the assignment block
+            # Rule: 0.6 strict match AND no attachments -> 2 points
+            if m_strict and not has_att:
+                score = 2
+                reason = "정확한 양식/첨부없음(+2)"
+            elif any_assignment_re.search(clean_sub):
+                # Valid but rule violated (missing ID in subject, has attachment, or just says "과제/0.6")
+                score = 1
+                violations = []
+                if not m_strict: violations.append("양식오류")
+                if has_att: violations.append("첨부있음")
+                reason = f"양식위반({','.join(violations)}) (+1)"
                     
         row = {
             "학번": est_id,
