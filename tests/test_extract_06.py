@@ -108,7 +108,7 @@ def test_extract_06_emails():
     # Load actual students to ensure edge cases work with thousands of mappings
     from bin.extract_06_emails import parse_students
 
-    real_name_to_id, real_id_to_track = parse_students()
+    real_name_to_id, real_id_to_track, _ = parse_students()
 
     if len(real_id_to_track) < 50:
         print(

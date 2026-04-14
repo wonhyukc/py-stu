@@ -12,6 +12,7 @@ from modules.mail_fetcher import fetch_assignment_emails
 def parse_students():
     name_to_id = {}
     id_to_track = {}
+    id_to_names = {}
     for filepath in ["input/students/py-students.md", "input/students/wb-students.md"]:
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
@@ -28,6 +29,8 @@ def parse_students():
 
                         if student_id.isdigit():
                             id_to_track[student_id] = track
+                            id_to_names[student_id] = {"eng": eng_name, "kor": kor_name}
+
                             clean_eng = re.sub(r"\s+", "", eng_name).lower()
                             if clean_eng:
                                 name_to_id[clean_eng] = student_id
@@ -37,11 +40,11 @@ def parse_students():
 
                             email_addr = cols[5].lower()
                             name_to_id[email_addr] = student_id
-    return name_to_id, id_to_track
+    return name_to_id, id_to_track, id_to_names
 
 
 def main():
-    name_to_id, id_to_track = parse_students()
+    name_to_id, id_to_track, id_to_names = parse_students()
 
     KST = timezone(timedelta(hours=9))
     start_dt = datetime(2026, 4, 6, 9, 0, tzinfo=KST)

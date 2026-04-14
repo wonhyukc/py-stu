@@ -1,10 +1,37 @@
 import os
 import re
 import time
+import hashlib
 from urllib.parse import unquote
 from playwright.sync_api import sync_playwright
+import cv2
+
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")  # type: ignore
+
+
+def compute_hash(file_path):
+    hasher = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        buf = f.read(65536)
+        while len(buf) > 0:
+            hasher.update(buf)
+            buf = f.read(65536)
+    return hasher.hexdigest()
+
+
+def has_face(image_path):
+    img = cv2.imread(image_path)
+    if img is None:
+        return False
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30)
+    )
+    return len(faces) > 0
+
 
 try:
+
     from bin.extract_06_emails import parse_students
 except ImportError:
     import sys
@@ -15,13 +42,18 @@ except ImportError:
 
 def download_photos():
     print("학생 목록을 로드합니다...")
-    name_to_id, id_to_track = parse_students()
-    student_names = list(name_to_id.keys())
+    name_to_id, id_to_track, id_to_names = parse_students()
 
     download_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../output/photos")
     )
     os.makedirs(download_dir, exist_ok=True)
+
+    existing_hashes = set()
+    for fname in os.listdir(download_dir):
+        fp = os.path.join(download_dir, fname)
+        if os.path.isfile(fp):
+            existing_hashes.add(compute_hash(fp))
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -135,19 +167,7 @@ def download_photos():
                     continue
 
                 # 리스트 화면에서 진짜 첨부파일 아이콘이 있는지 확인 (서명 이미지 등 무시)
-                has_att = (
-                    row.locator("img.yE").count() > 0
-                    or row.locator('[aria-label="Attachment"]').count() > 0
-                    or row.locator('[aria-label="첨부파일"]').count() > 0
-                    or "Attachment" in row.inner_html()
-                    or "첨부파일" in row.inner_html()
-                )
-
-                if not has_att:
-                    print(
-                        f"[{i+1}/{count}] 패스 (명시적 첨부파일 없음): {sender_name} | {subject_text}"
-                    )
-                    continue
+                # 인라인 이미지를 위해 해당 조건을 완화 (검색 쿼리가 이미 이미지/첨부 파일을 포함함)
 
                 print(
                     f"[{i+1}/{count}] 클릭하여 메일 열기: {sender_name} | {subject_text}"
@@ -185,7 +205,7 @@ def download_photos():
                 page.mouse.wheel(0, 5000)
                 page.wait_for_timeout(2000)
 
-                # 기존 JS DOM [download_url] 우회 방식 사용 (가장 안정적)
+                # 기존 JS DOM [download_url] 우회 방식 사용 (가장 안정적) + 인라인 이미지 추가
                 download_urls_data = page.evaluate("""() => {
                     const elements = document.querySelectorAll('[download_url]');
                     const urls = [];
@@ -195,6 +215,12 @@ def download_photos():
                     const aTags = document.querySelectorAll('a[href*="disp=safe"]');
                     aTags.forEach(a => {
                         urls.push("unknown:unknown:" + a.href);
+                    });
+                    const imgs = document.querySelectorAll('img[src*="mail.google.com/mail/u/"]');
+                    imgs.forEach((img, i) => {
+                        if(img.clientWidth > 50 || img.naturalWidth > 50) {
+                            urls.push("inline:inline_image_" + i + ".jpg:" + img.src);
+                        }
                     });
                     return urls;
                 }""")
@@ -217,51 +243,91 @@ def download_photos():
                         or ".jpeg" in url_lower
                         or ".gif" in url_lower
                         or "disp=safe" in url_lower
+                        or "inline" in data
                     ):
                         try:
-                            with page.expect_download(timeout=15000) as download_info:
-                                page.evaluate(f'window.location.href = "{url}";')
-                            download = download_info.value
-
-                            real_fname = (
-                                fname
-                                if fname != "unknown"
-                                else download.suggested_filename
-                            )
-                            # 다운로드된 파일의 확장자가 이미지인지 필터링 (docx 등 무시)
-                            if real_fname.lower().endswith(
-                                (".jpg", ".jpeg", ".png", ".gif")
-                            ):
-                                valid_downloads.append((real_fname, download))
-                            else:
-                                download.cancel()
-                        except Exception:
+                            # 다운로드 이벤트를 유발하는 대신 직접 byte를 받아옵니다.
+                            response = page.request.get(url, timeout=15000)
+                            if response.ok:
+                                real_fname = (
+                                    fname
+                                    if (fname and fname != "unknown")
+                                    else "attached_img.jpg"
+                                )
+                                file_bytes = response.body()
+                                valid_downloads.append((real_fname, file_bytes))
+                        except Exception as e:
+                            print(f"URL 직접 다운로드 에러: {e}")
                             continue
 
                 print(f"   -> 유효한 사진 다운로드 수: {len(valid_downloads)}")
 
-                for idx, (final_original_name, download) in enumerate(valid_downloads):
-                    # 파일 이름에 학생 이름이 있는지 확인
-                    has_name = False
-                    clean_filename = re.sub(r"\s+", "", final_original_name).lower()
-                    for s_name in student_names:
-                        if s_name in clean_filename:
-                            has_name = True
-                            break
+                for idx, (final_original_name, file_bytes) in enumerate(
+                    valid_downloads
+                ):
+                    temp_path = os.path.join(
+                        download_dir, f"temp_{int(time.time())}_{idx}.jpg"
+                    )
+                    try:
+                        with open(temp_path, "wb") as f:
+                            f.write(file_bytes)
+                    except Exception as e:
+                        print(f"다운로드 파일 쓰기 실패: {e}")
+                        continue
 
-                    if not has_name:
-                        # 이름이 없으면 보낸 사람 이름이나 이메일 적용
-                        prefix = (
-                            sender_name.replace(" ", "")
-                            if sender_name
-                            else sender_email
+                    file_hash = compute_hash(temp_path)
+                    if file_hash in existing_hashes:
+                        print(
+                            f"   -> [중복 패스] 이미 저장된 사진입니다: {final_original_name}"
                         )
-                        new_name = f"{prefix}_{final_original_name}"
-                    else:
-                        new_name = final_original_name
+                        os.remove(temp_path)
+                        continue
 
-                    save_path = os.path.join(download_dir, new_name)
-                    download.save_as(save_path)
+                    if not has_face(temp_path):
+                        print(
+                            f"   -> [삭제] 사람 얼굴이 발견되지 않음: {final_original_name}"
+                        )
+                        os.remove(temp_path)
+                        continue
+
+                    existing_hashes.add(file_hash)
+
+                    clean_sender = re.sub(r"\s+", "", sender_name).lower()
+                    student_id = name_to_id.get(clean_sender) or name_to_id.get(
+                        sender_email.lower()
+                    )
+                    if not student_id:
+                        m_id = re.search(r"\d{10}", subject_text)
+                        if m_id:
+                            student_id = m_id.group(0)
+
+                    kor_name = ""
+                    eng_name = ""
+                    if student_id and student_id in id_to_names:
+                        kor_name = id_to_names[student_id]["kor"]
+                        eng_name = id_to_names[student_id]["eng"]
+
+                    prefix = (
+                        kor_name
+                        if kor_name
+                        else (
+                            eng_name
+                            if eng_name
+                            else (
+                                sender_name.replace(" ", "")
+                                if sender_name
+                                else sender_email.split("@")[0]
+                            )
+                        )
+                    )
+                    if not prefix:
+                        prefix = "Unknown"
+                    sid_str = student_id if student_id else "NoID"
+
+                    new_name = f"{prefix}_{sid_str}_{final_original_name}"
+
+                    final_path = os.path.join(download_dir, new_name)
+                    os.rename(temp_path, final_path)
                     print(f"   -> 원본: {final_original_name} | 저장: {new_name}")
 
                 # 메일 목록으로 돌아가기 (Inbox 버튼 클릭 또는 Go Back)
