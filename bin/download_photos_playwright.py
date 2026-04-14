@@ -5,6 +5,7 @@ import hashlib
 from urllib.parse import unquote
 from playwright.sync_api import sync_playwright
 import cv2
+from difflib import get_close_matches
 
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")  # type: ignore
 
@@ -296,16 +297,29 @@ def download_photos():
                     student_id = name_to_id.get(clean_sender) or name_to_id.get(
                         sender_email.lower()
                     )
+
                     if not student_id:
                         m_id = re.search(r"\d{10}", subject_text)
                         if m_id:
                             student_id = m_id.group(0)
+                        else:
+                            # Fuzzy Matching (유사도 검증)
+                            all_known_names = list(name_to_id.keys())
+                            matches = get_close_matches(
+                                clean_sender, all_known_names, n=1, cutoff=0.7
+                            )
+                            if matches:
+                                student_id = name_to_id[matches[0]]
 
                     kor_name = ""
                     eng_name = ""
-                    if student_id and student_id in id_to_names:
-                        kor_name = id_to_names[student_id]["kor"]
-                        eng_name = id_to_names[student_id]["eng"]
+                    track_no = ""
+                    if student_id:
+                        if student_id in id_to_names:
+                            kor_name = id_to_names[student_id]["kor"]
+                            eng_name = id_to_names[student_id]["eng"]
+                        if student_id in id_to_track:
+                            track_no = id_to_track[student_id]
 
                     prefix = (
                         kor_name
@@ -322,9 +336,11 @@ def download_photos():
                     )
                     if not prefix:
                         prefix = "Unknown"
-                    sid_str = student_id if student_id else "NoID"
 
-                    new_name = f"{prefix}_{sid_str}_{final_original_name}"
+                    sid_str = student_id if student_id else "NoID"
+                    track_str = track_no if track_no else "NoTrack"
+
+                    new_name = f"{track_str}_{prefix}_{sid_str}_{final_original_name}"
 
                     final_path = os.path.join(download_dir, new_name)
                     os.rename(temp_path, final_path)
