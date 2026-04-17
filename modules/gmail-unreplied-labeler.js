@@ -11,7 +11,7 @@
 
 function labelUnrepliedEmails() {
   // 1. 사용할 라벨 이름 설정
-  var labelName = "미답변"; 
+  var labelName = "noreply"; 
   var label = GmailApp.getUserLabelByName(labelName);
   
   // 라벨이 지메일에 존재하지 않으면 새로 생성
