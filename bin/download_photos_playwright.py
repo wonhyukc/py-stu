@@ -4,10 +4,20 @@ import time
 import hashlib
 from urllib.parse import unquote
 from playwright.sync_api import sync_playwright
-import cv2
+from PIL import Image
 from difflib import get_close_matches
 
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")  # type: ignore
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+except ImportError:
+    print(
+        "[경고] pillow-heif 미설치 - HEIC 파일은 크기만 체크합니다. pip install pillow-heif"
+    )
+
+MIN_FILE_SIZE = 30_000  # 30KB 미만 → 아이콘/서명 이미지로 간주
+MIN_PIXELS = 100 * 100  # 100×100px 미만 → 썸네일로 간주
 
 
 def compute_hash(file_path):
@@ -20,15 +30,18 @@ def compute_hash(file_path):
     return hasher.hexdigest()
 
 
-def has_face(image_path):
-    img = cv2.imread(image_path)
-    if img is None:
-        return False
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30)
-    )
-    return len(faces) > 0
+def is_valid_photo(file_path):
+    size = os.path.getsize(file_path)
+    if size < MIN_FILE_SIZE:
+        return False, f"파일 크기 {size}B < {MIN_FILE_SIZE}B"
+    try:
+        img = Image.open(file_path)
+        w, h = img.size
+        if w * h < MIN_PIXELS:
+            return False, f"해상도 {w}x{h} 너무 작음"
+        return True, "OK"
+    except Exception as e:
+        return False, f"이미지 열기 실패: {e}"
 
 
 try:
@@ -114,10 +127,11 @@ def download_photos():
         page.wait_for_timeout(2000)
 
         # 0.6 주차 과제 및 이미지 첨부파일 대상 검색 (답장/전달 제외)
-        query = "has:attachment larger:50K -subject:re -subject:fwd -subject:fw "
+        query = "has:attachment -subject:re -subject:fwd -subject:fw "
         search_query = (
             query
-            + "(filename:jpg OR filename:png OR filename:jpeg OR filename:gif) after:2026/04/05"
+            + "(filename:jpg OR filename:png OR filename:jpeg OR filename:gif"
+            + " OR filename:heic OR filename:heif OR filename:webp) after:2026/04/05"
         )
         print(f"다음 쿼리로 메일을 검색합니다: {search_query}")
         page.fill('input[name="q"]', search_query)
@@ -202,31 +216,81 @@ def download_photos():
                     pass
                 # 제거: page.wait_for_load_state("networkidle", timeout=5000) -- Gmail과 같은 SPA에서는 백그라운드 소켓 연결 탓에 항상 에러 발생 가능
 
-                # 메시지 렌더링을 위해 페이지 아래로 스크롤
-                page.mouse.wheel(0, 5000)
-                page.wait_for_timeout(2000)
+                # 메시지 렌더링을 위해 페이지 끝까지 반복 스크롤 (지연 로딩 이미지 대응)
+                _prev_h = -1
+                for _ in range(10):
+                    _cur_h = page.evaluate("document.body.scrollHeight")
+                    if _cur_h == _prev_h:
+                        break
+                    _prev_h = _cur_h
+                    page.mouse.wheel(0, 3000)
+                    page.wait_for_timeout(1500)
 
-                # 기존 JS DOM [download_url] 우회 방식 사용 (가장 안정적) + 인라인 이미지 추가
+                # 6가지 방식으로 이미지 URL 추출
                 download_urls_data = page.evaluate("""() => {
-                    const elements = document.querySelectorAll('[download_url]');
                     const urls = [];
-                    elements.forEach(el => {
+
+                    // 방법 1: 표준 첨부파일 download_url 속성
+                    document.querySelectorAll('[download_url]').forEach(el => {
                         urls.push(el.getAttribute('download_url'));
                     });
-                    const aTags = document.querySelectorAll('a[href*="disp=safe"]');
-                    aTags.forEach(a => {
-                        urls.push("unknown:unknown:" + a.href);
+
+                    // 방법 2: 보안 링크 (disp=safe)
+                    document.querySelectorAll('a[href*="disp=safe"]').forEach(a => {
+                        urls.push('unknown:unknown:' + a.href);
                     });
-                    const imgs = document.querySelectorAll('img[src*="mail.google.com/mail/u/"]');
-                    imgs.forEach((img, i) => {
-                        if(img.clientWidth > 50 || img.naturalWidth > 50) {
-                            urls.push("inline:inline_image_" + i + ".jpg:" + img.src);
+
+                    // 방법 3: Gmail 인라인 이미지
+                    document.querySelectorAll('img[src*="mail.google.com/mail/u/"]').forEach((img, i) => {
+                        if (img.clientWidth > 50 || img.naturalWidth > 50) {
+                            urls.push('inline:inline_image_' + i + '.jpg:' + img.src);
                         }
                     });
-                    return urls;
+
+                    // 방법 4: data-attachment-id 속성 (Gmail UI 업데이트 대응)
+                    document.querySelectorAll('[data-attachment-id]').forEach(el => {
+                        const aid = el.getAttribute('data-attachment-id');
+                        if (aid) {
+                            const u = 'https://mail.google.com/mail/u/0/?ui=2&attid=' + aid + '&disp=safe&zw';
+                            urls.push('unknown:attachment_' + aid + '.jpg:' + u);
+                        }
+                    });
+
+                    // 방법 5: 다운로드 버튼 href
+                    ['a[aria-label*="다운로드"]', 'a[aria-label*="Download"]'].forEach(sel => {
+                        document.querySelectorAll(sel).forEach(el => {
+                            if (el.href) urls.push('unknown:download_btn.jpg:' + el.href);
+                        });
+                    });
+
+                    // 방법 6: googleusercontent.com 인라인 이미지 (대형)
+                    document.querySelectorAll('img[src*="googleusercontent.com"]').forEach((img, i) => {
+                        if ((img.clientWidth > 80 || img.naturalWidth > 80) && img.src.includes('mail')) {
+                            urls.push('inline:gusercontent_' + i + '.jpg:' + img.src);
+                        }
+                    });
+
+                    return [...new Set(urls)];
                 }""")
 
-                download_urls_data = list(set(download_urls_data))
+                IMAGE_EXTENSIONS = (
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".gif",
+                    ".heic",
+                    ".heif",
+                    ".webp",
+                )
+                CONTENT_TYPE_TO_EXT = {
+                    "image/jpeg": ".jpg",
+                    "image/png": ".png",
+                    "image/gif": ".gif",
+                    "image/heic": ".heic",
+                    "image/heif": ".heif",
+                    "image/webp": ".webp",
+                }
+
                 valid_downloads = []
                 for data in download_urls_data:
                     parts = data.split(":", 2)
@@ -239,35 +303,36 @@ def download_photos():
 
                     url_lower = data.lower()
                     if (
-                        ".jpg" in url_lower
-                        or ".png" in url_lower
-                        or ".jpeg" in url_lower
-                        or ".gif" in url_lower
+                        any(ext in url_lower for ext in IMAGE_EXTENSIONS)
                         or "disp=safe" in url_lower
                         or "inline" in data
+                        or "attachment" in data[:30]
                     ):
                         try:
-                            # 다운로드 이벤트를 유발하는 대신 직접 byte를 받아옵니다.
                             response = page.request.get(url, timeout=15000)
                             if response.ok:
+                                ct = response.headers.get("content-type", "image/jpeg")
+                                ext = CONTENT_TYPE_TO_EXT.get(
+                                    ct.split(";")[0].strip(), ".jpg"
+                                )
                                 real_fname = (
                                     fname
                                     if (fname and fname != "unknown")
-                                    else "attached_img.jpg"
+                                    else f"attached_img{ext}"
                                 )
                                 file_bytes = response.body()
-                                valid_downloads.append((real_fname, file_bytes))
+                                valid_downloads.append((real_fname, file_bytes, ext))
                         except Exception as e:
                             print(f"URL 직접 다운로드 에러: {e}")
                             continue
 
                 print(f"   -> 유효한 사진 다운로드 수: {len(valid_downloads)}")
 
-                for idx, (final_original_name, file_bytes) in enumerate(
+                for idx, (final_original_name, file_bytes, file_ext) in enumerate(
                     valid_downloads
                 ):
                     temp_path = os.path.join(
-                        download_dir, f"temp_{int(time.time())}_{idx}.jpg"
+                        download_dir, f"temp_{int(time.time())}_{idx}{file_ext}"
                     )
                     try:
                         with open(temp_path, "wb") as f:
@@ -284,9 +349,10 @@ def download_photos():
                         os.remove(temp_path)
                         continue
 
-                    if not has_face(temp_path):
+                    valid, reason = is_valid_photo(temp_path)
+                    if not valid:
                         print(
-                            f"   -> [삭제] 사람 얼굴이 발견되지 않음: {final_original_name}"
+                            f"   -> [삭제] 유효하지 않은 이미지 ({reason}): {final_original_name}"
                         )
                         os.remove(temp_path)
                         continue
