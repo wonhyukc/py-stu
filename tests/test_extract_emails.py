@@ -22,7 +22,7 @@ def test_get_time_window():
 
 def test_parse_students():
     # 파일이 존재하는 환경에서 실행될 경우 딕셔너리 반환 확인
-    name_to_id, id_to_track = parse_students()
+    name_to_id, id_to_track, id_to_names = parse_students()
 
     assert isinstance(name_to_id, dict)
     assert isinstance(id_to_track, dict)

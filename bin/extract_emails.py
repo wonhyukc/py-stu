@@ -36,7 +36,7 @@ def parse_students():
                         if student_id.isdigit():
                             id_to_track[student_id] = track
                             id_to_names[student_id] = {"eng": eng_name, "kor": kor_name}
-                            
+
                             clean_eng = re.sub(r"\s+", "", eng_name).lower()
                             if clean_eng:
                                 name_to_id[clean_eng] = student_id
