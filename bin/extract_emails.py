@@ -56,6 +56,20 @@ def get_time_window():
     return start_time, deadline
 
 
+def get_subfolder_path(track_name, week):
+    if not track_name:
+        track_name = "unknown"
+
+    # week can be '7', None, etc.
+    if week:
+        week_str = str(week).zfill(2)
+        if track_name.startswith("web"):
+            return f"output/{track_name}_{week_str}"
+        return f"output/{track_name}{week_str}"
+    else:
+        return f"output/{track_name}_all"
+
+
 def extract_gmail_interactive(target_week=None, allowed_tracks=None):
     print("Loading student roster...")
     name_to_id, id_to_track = parse_students()
@@ -281,27 +295,48 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
         browser.close()
 
     if new_rows:
-        out_dir = os.path.join(os.path.dirname(__file__), "../output")
-        os.makedirs(out_dir, exist_ok=True)
-        out_name = f"mail0{target_week}.csv" if target_week else "mail_all.csv"
-        out_path = os.path.join(out_dir, out_name)
+        # Group rows by track
+        rows_by_track = {}
+        # Also need mapping from track_num to track_name for folder creation
+        # Reverse map of track_map
+        track_map = {"py": "468", "web1": "761", "web2": "762"}
+        num_to_track = {v: k for k, v in track_map.items()}
 
-        fieldnames = [
-            "학번",
-            "추정하는학번",
-            "track",
-            "점수",
-            "유형",
-            "이유",
-            "날짜",
-            "이름",
-            "메일제목",
-        ]
-        with open(out_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(new_rows)
-        print(f"\n========= 총 {len(new_rows)}건 파싱 완료. {out_path} 저장 =========")
+        for row_data in new_rows:
+            t_num = row_data["track"]
+            t_name = num_to_track.get(t_num, "unknown")
+            rows_by_track.setdefault(t_name, []).append(row_data)
+
+        out_dir_base = os.path.join(os.path.dirname(__file__), "..")
+        total_saved = 0
+
+        for t_name, rows in rows_by_track.items():
+            rel_subfolder = get_subfolder_path(t_name, target_week)
+            subfolder_path = os.path.join(out_dir_base, rel_subfolder)
+            os.makedirs(subfolder_path, exist_ok=True)
+
+            out_name = f"mail0{target_week}.csv" if target_week else "mail_all.csv"
+            out_path = os.path.join(subfolder_path, out_name)
+
+            fieldnames = [
+                "학번",
+                "추정하는학번",
+                "track",
+                "점수",
+                "유형",
+                "이유",
+                "날짜",
+                "이름",
+                "메일제목",
+            ]
+            with open(out_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+            total_saved += len(rows)
+            print(f" -> {rel_subfolder}/{out_name} 에 {len(rows)}건 저장 완료")
+
+        print(f"\n========= 총 {total_saved}건 트랙별 파싱 완료 =========")
     else:
         print("\n========= 조건에 맞는 저장할 데이터가 없습니다. =========")
 
