@@ -56,7 +56,9 @@ def get_time_window():
     return start_time, deadline
 
 
-def extract_gmail_interactive(target_week=None, allowed_tracks=None, track_names=None):
+def extract_gmail_interactive(
+    target_week=None, allowed_tracks=None, track_names=None, require_attachment=False
+):
     print("Loading student roster...")
     name_to_id, id_to_track = parse_students()
 
@@ -252,10 +254,7 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None, track_names
                 task_type = "기타"
             else:
                 task_type = f"0.{found_week}" if found_week else "알수없음"
-                if m_strict and not has_att:
-                    score = 2
-                    reason = "정확한 양식/첨부없음(+2)"
-                elif any_assignment_re.search(clean_sub):
+                if any_assignment_re.search(clean_sub):
                     # Check explicitly other week
                     diff_week_match = re.search(r"0?\.([0-57-9])", clean_sub)
                     expected_week_str = (
@@ -266,17 +265,45 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None, track_names
                     ) or not diff_week_match
 
                     if is_this_week:
-                        score = 1
+                        base_score = 2.0
                         violations = []
-                        if not m_strict:
-                            violations.append("양식오류")
-                        if has_att:
-                            violations.append("첨부있음")
-                        reason = f"양식위반({','.join(violations)}) (+1)"
+
+                        # Attachment check
+                        if require_attachment:
+                            if not has_att:
+                                base_score -= 1.0
+                                violations.append("첨부없음")
+                        else:
+                            if has_att:
+                                base_score -= 1.0
+                                violations.append("첨부있음")
+
+                        # Strict exact title check (no brackets, exactly (과제|assignment)0.X학번)
+                        week_val = target_week if target_week else found_week
+                        exact_title_re = re.compile(
+                            rf"^(과제|assignment)0?\.{week_val}(\d{{10}})$",
+                            re.IGNORECASE,
+                        )
+                        is_exact_title = bool(exact_title_re.match(clean_sub))
+
+                        if not is_exact_title:
+                            base_score -= 0.2
+                            violations.append("제목양식오류")
+
+                        if not violations:
+                            score = 2
+                            reason = "정확한 양식/조건충족(+2)"
+                        else:
+                            score = round(base_score, 1)
+                            reason = f"조건위반({','.join(violations)}) ({score})"
                     else:
                         score = 0
                         reason = "타주차 과제(수동확인)"
                         task_type = "기타"
+                else:
+                    score = 0
+                    reason = "과제 아님"
+                    task_type = "기타"
 
             row_data = {
                 "학번": est_id,
@@ -348,11 +375,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "tracks", nargs="*", default=[], help="허용할 트랙 목록 (예: py web1 web2)"
     )
+    parser.add_argument(
+        "--require-attachment",
+        action="store_true",
+        help="첨부 파일이 있어야 정상으로 간주",
+    )
     args = parser.parse_args()
 
     track_map = {"py": "468", "web1": "761", "web2": "762"}
     allowed_tracks = [track_map[t] for t in args.tracks if t in track_map]
 
     extract_gmail_interactive(
-        target_week=args.week, allowed_tracks=allowed_tracks, track_names=args.tracks
+        target_week=args.week,
+        allowed_tracks=allowed_tracks,
+        track_names=args.tracks,
+        require_attachment=args.require_attachment,
     )
