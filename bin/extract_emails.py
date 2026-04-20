@@ -56,7 +56,7 @@ def get_time_window():
     return start_time, deadline
 
 
-def extract_gmail_interactive(target_week=None, allowed_tracks=None):
+def extract_gmail_interactive(target_week=None, allowed_tracks=None, track_names=None):
     print("Loading student roster...")
     name_to_id, id_to_track = parse_students()
 
@@ -297,7 +297,15 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
     if new_rows:
         out_dir = os.path.join(os.path.dirname(__file__), "../output")
         os.makedirs(out_dir, exist_ok=True)
-        out_name = f"mail0{target_week}.csv" if target_week else "mail_all.csv"
+
+        # Build out_name based on target_week and track_names
+        base_name = f"mail0{target_week}" if target_week else "mail_all"
+        if track_names:
+            tracks_suffix = "_".join(track_names)
+            out_name = f"{base_name}_{tracks_suffix}.csv"
+        else:
+            out_name = f"{base_name}.csv"
+
         out_path = os.path.join(out_dir, out_name)
 
         fieldnames = [
@@ -345,4 +353,6 @@ if __name__ == "__main__":
     track_map = {"py": "468", "web1": "761", "web2": "762"}
     allowed_tracks = [track_map[t] for t in args.tracks if t in track_map]
 
-    extract_gmail_interactive(target_week=args.week, allowed_tracks=allowed_tracks)
+    extract_gmail_interactive(
+        target_week=args.week, allowed_tracks=allowed_tracks, track_names=args.tracks
+    )
