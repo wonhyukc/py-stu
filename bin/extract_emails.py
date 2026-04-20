@@ -342,6 +342,20 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
 
 
 if __name__ == "__main__":
+    print("=" * 60)
+    print("📧 [Gmail 과제 이메일 추출기] 실행 안내")
+    print("=" * 60)
+    print("사용법: python bin/extract_emails.py [주차] [트랙1] [트랙2] ...")
+    print("")
+    print("예시:")
+    print("  1. 특정 주차 전체 트랙 : python bin/extract_emails.py 7")
+    print("  2. 특정 주차 특정 트랙 : python bin/extract_emails.py 7 py web1")
+    print("  3. 최근 7일 전체(자동) : python bin/extract_emails.py")
+    print("-" * 60)
+    print("※ 인자 없이 실행 시, 가장 최근 월요일 09:00 마감 기준으로")
+    print("   지난 7일간의 모든 메일을 수집하고 각 트랙별 폴더로 자동 분리합니다.")
+    print("=" * 60 + "\n")
+
     parser = argparse.ArgumentParser(description="대화형 Gmail 과제 이메일 추출기")
     parser.add_argument("week", nargs="?", default=None, help="주차 번호 (예: 7)")
     parser.add_argument(
