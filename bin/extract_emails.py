@@ -14,6 +14,7 @@ KST = timezone(timedelta(hours=9))
 def parse_students():
     name_to_id = {}
     id_to_track = {}
+    id_to_names = {}
     base_dir = os.path.dirname(os.path.dirname(__file__))
     for filepath in [
         os.path.join(base_dir, "input/students/py-students.md"),
@@ -34,6 +35,8 @@ def parse_students():
 
                         if student_id.isdigit():
                             id_to_track[student_id] = track
+                            id_to_names[student_id] = {"eng": eng_name, "kor": kor_name}
+                            
                             clean_eng = re.sub(r"\s+", "", eng_name).lower()
                             if clean_eng:
                                 name_to_id[clean_eng] = student_id
@@ -43,7 +46,7 @@ def parse_students():
 
                             email_addr = cols[5].lower()
                             name_to_id[email_addr] = student_id
-    return name_to_id, id_to_track
+    return name_to_id, id_to_track, id_to_names
 
 
 def get_time_window():
@@ -60,7 +63,7 @@ def extract_gmail_interactive(
     target_week=None, allowed_tracks=None, track_names=None, require_attachment=False
 ):
     print("Loading student roster...")
-    name_to_id, id_to_track = parse_students()
+    name_to_id, id_to_track, id_to_names = parse_students()
 
     start_dt, deadline_dt = get_time_window()
     print(
