@@ -56,20 +56,6 @@ def get_time_window():
     return start_time, deadline
 
 
-def get_subfolder_path(track_name, week):
-    if not track_name:
-        track_name = "unknown"
-
-    # week can be '7', None, etc.
-    if week:
-        week_str = str(week).zfill(2)
-        if track_name.startswith("web"):
-            return f"output/{track_name}_{week_str}"
-        return f"output/{track_name}{week_str}"
-    else:
-        return f"output/{track_name}_all"
-
-
 def extract_gmail_interactive(target_week=None, allowed_tracks=None):
     print("Loading student roster...")
     name_to_id, id_to_track = parse_students()
@@ -126,13 +112,16 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
 
         if target_week:
             search_query = (
-                f'("과제" OR "0.{target_week}") after:{after_str} '
-                f"before:{before_str} -from:comments-noreply@docs.google.com"
+                f'("과제 0.{target_week}" OR "과제0.{target_week}" OR '
+                f'"assignment 0.{target_week}" OR "assignment0.{target_week}") '
+                f"after:{after_str} before:{before_str} "
+                f"-from:comments-noreply@docs.google.com -from:wonhyukc@stu.ac.kr"
             )
         else:
             search_query = (
                 f'("과제" OR "assignment") after:{after_str} '
-                f"before:{before_str} -from:comments-noreply@docs.google.com"
+                f"before:{before_str} -from:comments-noreply@docs.google.com "
+                f"-from:wonhyukc@stu.ac.kr"
             )
 
         print(f"다음 쿼리로 메일을 검색합니다: {search_query}")
@@ -145,6 +134,8 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
         rows = page.locator("tr.zA")
         count = rows.count()
         print(f"총 {count}개의 검색된 이메일을 발견했습니다.")
+
+        seen_ids = set()
 
         for i in range(count):
             row = rows.nth(i)
@@ -172,6 +163,12 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
                     date_str = date_loc.first.inner_text()
                 if not date_str:
                     date_str = "Thu, 9 Apr 2026 12:00:00 +0900"
+
+                # Exclude 'me' or explicit professor email
+                sender_lower = sender.lower()
+                if "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower:
+                    print(f" -> 발신자(본인) 제외: {date_str} ({subject})")
+                    continue
 
                 email_dt = None
                 try:
@@ -231,14 +228,17 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
                     if m_id:
                         est_id = m_id.group(0)
 
+            # Deduplication: Keep only the most recent email per student ID
+            if est_id:
+                if est_id in seen_ids:
+                    print(f" -> 중복 제외 (과거 메일 무시): {est_id} ({sender})")
+                    continue
+                seen_ids.add(est_id)
+
             track_num = id_to_track.get(est_id, "")
 
             # Filter by track if specific tracks are requested
             if allowed_tracks and track_num not in allowed_tracks:
-                # If est_id is unknown, we still process it but it gets 0 points.
-                # But if we explicitly requested specific tracks, maybe we skip it?
-                # "모든 트택을 처리하도록 해줘. 트랙이 입력되어도 09:00 이후 즉 마감 이후는 모두 제외."
-                # If they passed tracks, we should only keep emails from those tracks.
                 if est_id:
                     continue
 
@@ -295,48 +295,27 @@ def extract_gmail_interactive(target_week=None, allowed_tracks=None):
         browser.close()
 
     if new_rows:
-        # Group rows by track
-        rows_by_track = {}
-        # Also need mapping from track_num to track_name for folder creation
-        # Reverse map of track_map
-        track_map = {"py": "468", "web1": "761", "web2": "762"}
-        num_to_track = {v: k for k, v in track_map.items()}
+        out_dir = os.path.join(os.path.dirname(__file__), "../output")
+        os.makedirs(out_dir, exist_ok=True)
+        out_name = f"mail0{target_week}.csv" if target_week else "mail_all.csv"
+        out_path = os.path.join(out_dir, out_name)
 
-        for row_data in new_rows:
-            t_num = row_data["track"]
-            t_name = num_to_track.get(t_num, "unknown")
-            rows_by_track.setdefault(t_name, []).append(row_data)
-
-        out_dir_base = os.path.join(os.path.dirname(__file__), "..")
-        total_saved = 0
-
-        for t_name, rows in rows_by_track.items():
-            rel_subfolder = get_subfolder_path(t_name, target_week)
-            subfolder_path = os.path.join(out_dir_base, rel_subfolder)
-            os.makedirs(subfolder_path, exist_ok=True)
-
-            out_name = f"mail0{target_week}.csv" if target_week else "mail_all.csv"
-            out_path = os.path.join(subfolder_path, out_name)
-
-            fieldnames = [
-                "학번",
-                "추정하는학번",
-                "track",
-                "점수",
-                "유형",
-                "이유",
-                "날짜",
-                "이름",
-                "메일제목",
-            ]
-            with open(out_path, "w", encoding="utf-8", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows)
-            total_saved += len(rows)
-            print(f" -> {rel_subfolder}/{out_name} 에 {len(rows)}건 저장 완료")
-
-        print(f"\n========= 총 {total_saved}건 트랙별 파싱 완료 =========")
+        fieldnames = [
+            "학번",
+            "추정하는학번",
+            "track",
+            "점수",
+            "유형",
+            "이유",
+            "날짜",
+            "이름",
+            "메일제목",
+        ]
+        with open(out_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(new_rows)
+        print(f"\n========= 총 {len(new_rows)}건 파싱 완료. {out_path} 저장 =========")
     else:
         print("\n========= 조건에 맞는 저장할 데이터가 없습니다. =========")
 
