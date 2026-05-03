@@ -1,12 +1,13 @@
 import csv
 import os
+from typing import Dict
 
 input_file = "/home/hyuk/nvme_data/prj/stu/eval/python - score (2).csv"
 out_hw = "/home/hyuk/nvme_data/prj/stu/eval/moodle_score_track_468_과제.tsv"
 out_part = "/home/hyuk/nvme_data/prj/stu/eval/moodle_score_track_468_수업참여.tsv"
 
-hw_scores = {}
-part_scores = {}
+hw_scores: Dict[str, float] = {}
+part_scores: Dict[str, float] = {}
 
 with open(input_file, "r", encoding="utf-8-sig") as f:
     reader = csv.DictReader(f)

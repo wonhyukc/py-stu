@@ -1,5 +1,6 @@
 import csv
 import os
+from typing import Dict
 
 tracks = ["468", "761", "762"]
 categories = ["과제", "수업참여"]
@@ -11,7 +12,7 @@ for track in tracks:
             f"/home/hyuk/nvme_data/prj/stu/eval/moodle_score_track_{track}_{cat}.tsv"
         )
 
-        scores = {}
+        scores: Dict[str, float] = {}
 
         try:
             with open(input_csv, "r", encoding="utf-8-sig") as f:
