@@ -53,7 +53,9 @@ def extract_grades(query=None, require_attachment=False):
     seen_students = set()
 
     # 헤더
-    output_rows.append(["학번", "점수", "이유", "날짜", "이름", "메일제목"])
+    output_rows.append(
+        ["no", "학번", "점수", "유형", "이유", "날짜", "이름", "메일제목"]
+    )
 
     for email_data in emails:
         subject = email_data.get("subject", "")
@@ -136,7 +138,16 @@ def extract_grades(query=None, require_attachment=False):
                     reason = f"조건위반({','.join(violations)})"
 
         output_rows.append(
-            [student_id, score, reason, formatted_date, name, short_subject]
+            [
+                "",
+                student_id,
+                score,
+                task_num,
+                reason,
+                formatted_date,
+                name,
+                short_subject,
+            ]
         )
 
     output_path = os.path.join(base_dir, "output", "grades_output.csv")

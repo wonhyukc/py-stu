@@ -53,7 +53,7 @@ def append_grades_to_sheet(rows_data):
         print(f"❌ 오류: 시트 ID(gid={TARGET_GID})를 찾을 수 없습니다.")
         return False
 
-    range_name = f"{sheet_title}!A:F"  # A~F열까지 데이터 기준으로 append
+    range_name = f"{sheet_title}!A:H"  # A~H열까지 데이터 기준으로 append
     body = {"values": rows_data}
 
     print(
