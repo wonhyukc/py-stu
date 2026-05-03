@@ -18,6 +18,27 @@ from modules.sheet_updater import append_grades_to_sheet
 SETTINGS_FILE = os.path.join(base_dir, "settings.json")
 
 
+def get_student_tracks(base_dir):
+    id_to_track = {}
+    for filepath in [
+        os.path.join(base_dir, "input", "students", "py-students.md"),
+        os.path.join(base_dir, "input", "students", "wb-students.md"),
+    ]:
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line.startswith("|") or "---" in line or "학번" in line:
+                        continue
+                    cols = [c.strip() for c in line.split("|")]
+                    if len(cols) > 8:
+                        track = cols[1]
+                        student_id = cols[3]
+                        if student_id.isdigit():
+                            id_to_track[student_id] = track
+    return id_to_track
+
+
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -42,6 +63,8 @@ def extract_grades(query=None, require_attachment=False):
     current_query = settings.get("gmail_search_query", "과제 0.4 | assignment 0.4")
     print(f"🔍 다음 쿼리 규칙으로 메일을 수집합니다: [{current_query}]")
 
+    id_to_track = get_student_tracks(base_dir)
+
     deadline_dt = datetime.strptime("2026-04-20 09:00:00", "%Y-%m-%d %H:%M:%S")
     emails = fetch_assignment_emails(current_query, max_results=50)
 
@@ -54,7 +77,7 @@ def extract_grades(query=None, require_attachment=False):
 
     # 헤더
     output_rows.append(
-        ["no", "학번", "점수", "유형", "이유", "날짜", "이름", "메일제목"]
+        ["no", "학번", "track", "점수", "유형", "이유", "날짜", "이름", "메일제목"]
     )
 
     for email_data in emails:
@@ -78,6 +101,8 @@ def extract_grades(query=None, require_attachment=False):
         # 4. 학번 파싱 (이미지의 경우 2026300096 등 10자리 숫자이므로 \d{8,11} 매칭)
         match = re.search(r"\d{8,11}", subject)
         student_id = match.group(0) if match else "학번없음"
+
+        track_num = id_to_track.get(student_id, "")
 
         # 4.5 중복 제출 확인 (학번이 확인된 경우 1회만 점수 부여)
         if student_id != "학번없음":
@@ -141,6 +166,7 @@ def extract_grades(query=None, require_attachment=False):
             [
                 "",
                 student_id,
+                track_num,
                 score,
                 task_num,
                 reason,
