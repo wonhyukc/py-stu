@@ -30,3 +30,4 @@ output/
 *.csv
 *.tsv
 *.txt
+gwsServiceAccnt-mail.json
