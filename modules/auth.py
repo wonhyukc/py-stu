@@ -29,8 +29,29 @@ def get_gmail_service(credentials_file="credentials.json", token_file="token.jso
                 "ℹ️ credentials.json이 없으므로 WIF(Application Default Credentials)를 시도합니다."
             )
             creds, _ = google.auth.default(scopes=SCOPES)
-            if hasattr(creds, "with_subject"):
-                creds = creds.with_subject("wonhyukc@stu.ac.kr")
+            from google.auth import impersonated_credentials
+
+            # WIF 환경에서 DWD(도메인 전체 위임)를 적용하기 위해 명시적으로 subject를 추가합니다.
+            target_principal = "fedora-2603@drive-project-84200.iam.gserviceaccount.com"
+
+            # google-github-actions/auth 가 이미 impersonated_credentials 를 반환하는 경우
+            if (
+                hasattr(creds, "source_credentials")
+                and getattr(creds, "service_account_email", None) == target_principal
+            ):
+                creds = impersonated_credentials.Credentials(
+                    source_credentials=creds.source_credentials,
+                    target_principal=target_principal,
+                    target_scopes=SCOPES,
+                    subject="wonhyukc@stu.ac.kr",
+                )
+            else:
+                creds = impersonated_credentials.Credentials(
+                    source_credentials=creds,
+                    target_principal=target_principal,
+                    target_scopes=SCOPES,
+                    subject="wonhyukc@stu.ac.kr",
+                )
             return build("gmail", "v1", credentials=creds)
 
         if creds and creds.expired and creds.refresh_token:
