@@ -7,8 +7,8 @@
 | 평가 항목 | 비율 (Weight) | 영문명 (English) | 비고 |
 | :--- | :--- | :--- | :--- |
 | **기말고사 / 프로젝트** | **40%** | Final Exam / Project | |
-| **중간고사** | **20%** | Midterm Exam | |
-| **과제** | **20%** | Assignments | 이메일/GitHub 폼 제출, 상호평가 결과 등 포함 |
+| **중간고사** | **10%** | Midterm Exam | |
+| **과제** | **30%** | Assignments | 이메일/GitHub 폼 제출, 상호평가 결과 등 포함 |
 | **수업 참여도** | **20%** | Class Participation | |
 | **합계 (Total)** | **100%** | | |
 
