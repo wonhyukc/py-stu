@@ -40,4 +40,5 @@ jobs:
 
     - name: Run Auto Grader (0.7)
       run: |
+        mkdir -p output
         python bin/extract_grades.py --query "과제 0.7 | assignment 0.7"
