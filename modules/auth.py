@@ -40,7 +40,7 @@ def get_gmail_service(credentials_file="credentials.json", token_file="token.jso
                 and getattr(creds, "service_account_email", None) == target_principal
             ):
                 creds = impersonated_credentials.Credentials(
-                    source_credentials=creds.source_credentials,
+                    source_credentials=creds,
                     target_principal=target_principal,
                     target_scopes=SCOPES,
                     subject="wonhyukc@stu.ac.kr",
