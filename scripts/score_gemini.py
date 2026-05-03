@@ -15,8 +15,7 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 # We use JSON response mime type to get a structured evaluation
 model = genai.GenerativeModel(
-    "gemini-2.5-flash",
-    generation_config={"response_mime_type": "application/json"}
+    "gemini-2.5-flash", generation_config={"response_mime_type": "application/json"}
 )
 
 input_csv = "/data/hyuk/prj/stu/eval/wb02-mid.csv"
@@ -30,27 +29,33 @@ with open(input_csv, "r", encoding="utf-8-sig") as f:
         student_id = row["Student ID"]
         completed_time = row["Completed Time"]
         raw_links_str = row["Links"]
-        
+
         # Extract URLs
         raw_links = raw_links_str.split("\n")
         clean_links = []
-        for l in raw_links:
-            match = re.search(r'(https?://gemini\.google\.com/share/[a-zA-Z0-9_-]+)', l)
+        for link_url in raw_links:
+            match = re.search(
+                r"(https?://gemini\.google\.com/share/[a-zA-Z0-9_-]+)", link_url
+            )
             if match:
                 clean_links.append(match.group(1))
             else:
                 # Some links might not have https:// prefix
-                match = re.search(r'(gemini\.google\.com/share/[a-zA-Z0-9_-]+)', l)
+                match = re.search(
+                    r"(gemini\.google\.com/share/[a-zA-Z0-9_-]+)", link_url
+                )
                 if match:
                     clean_links.append("https://" + match.group(1))
 
         if clean_links:
-            students.append({
-                "id": student_id,
-                "time": completed_time,
-                "raw_links": raw_links_str,
-                "links": clean_links
-            })
+            students.append(
+                {
+                    "id": student_id,
+                    "time": completed_time,
+                    "raw_links": raw_links_str,
+                    "links": clean_links,
+                }
+            )
 
 print(f"Loaded {len(students)} students to evaluate.")
 
@@ -76,16 +81,20 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     # Use a large viewport to capture as much content as possible
     page = browser.new_page(viewport={"width": 1280, "height": 1080})
-    
+
     with open(output_csv, "w", newline="", encoding="utf-8-sig") as out_f:
         writer = csv.writer(out_f)
-        writer.writerow(["Student ID", "Completed Time", "Links", "Score", "Reason", "Summary"])
-        
+        writer.writerow(
+            ["Student ID", "Completed Time", "Links", "Score", "Reason", "Summary"]
+        )
+
         for student in students:
-            print(f"\nEvaluating Student ID: {student['id']} ({len(student['links'])} links)")
+            print(
+                f"\nEvaluating Student ID: {student['id']} ({len(student['links'])} links)"
+            )
             images = []
-            
-            for i, link in enumerate(student['links']):
+
+            for i, link in enumerate(student["links"]):
                 print(f"  Fetching: {link}")
                 img_path = f"/data/hyuk/prj/stu/eval/tmp_{student['id']}_{i}.png"
                 try:
@@ -97,24 +106,33 @@ with sync_playwright() as p:
                     images.append(PIL.Image.open(img_path))
                 except Exception as e:
                     print(f"  Error loading {link}: {e}")
-            
+
             if not images:
                 print("  No images captured. Score: 0")
-                writer.writerow([student['id'], student['time'], student['raw_links'], 0, "유효한 링크가 없거나 캡처에 실패했습니다.", ""])
+                writer.writerow(
+                    [
+                        student["id"],
+                        student["time"],
+                        student["raw_links"],
+                        0,
+                        "유효한 링크가 없거나 캡처에 실패했습니다.",
+                        "",
+                    ]
+                )
                 out_f.flush()
                 continue
-            
+
             # Send to Gemini
             print("  Evaluating with Gemini 2.5 Flash...")
             try:
                 content = [prompt] + images
                 response = model.generate_content(content)
                 res_data = json.loads(response.text)
-                
+
                 score = res_data.get("score", 0)
                 reason = res_data.get("reason", "")
                 summary = res_data.get("summary", "")
-                
+
                 print(f"  Score: {score}/5")
                 print(f"  Reason: {reason}")
             except Exception as e:
@@ -122,18 +140,27 @@ with sync_playwright() as p:
                 score = -1
                 reason = f"API 오류 발생: {e}"
                 summary = ""
-            
-            writer.writerow([student['id'], student['time'], student['raw_links'], score, reason, summary])
+
+            writer.writerow(
+                [
+                    student["id"],
+                    student["time"],
+                    student["raw_links"],
+                    score,
+                    reason,
+                    summary,
+                ]
+            )
             out_f.flush()
-            
+
             # Clean up temporary images to save space
             for img in images:
                 img.close()
-            for i in range(len(student['links'])):
+            for i in range(len(student["links"])):
                 img_path = f"/data/hyuk/prj/stu/eval/tmp_{student['id']}_{i}.png"
                 if os.path.exists(img_path):
                     os.remove(img_path)
-            
+
             # small delay to prevent rate limits
             time.sleep(2)
 

@@ -27,3 +27,6 @@ token.json
 
 output/
 .bin/
+*.csv
+*.tsv
+*.txt
