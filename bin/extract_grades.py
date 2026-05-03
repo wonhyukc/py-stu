@@ -31,7 +31,7 @@ def save_settings(settings):
         json.dump(settings, f, ensure_ascii=False, indent=4)
 
 
-def extract_grades(query=None):
+def extract_grades(query=None, require_attachment=False):
     settings = load_settings()
 
     if query and query != settings.get("gmail_search_query"):
@@ -94,6 +94,7 @@ def extract_grades(query=None):
         task_prefix = f"과제{task_num} " if task_num else "과제 "
 
         reason = f"{task_prefix.strip()} 마감시간초과"
+        has_att = email_data.get("has_attachment", False)
 
         if mail_dt:
             # 출력 포맷: 3/27 18:30
@@ -101,8 +102,38 @@ def extract_grades(query=None):
                 f"{mail_dt.month}/{mail_dt.day} {mail_dt.strftime('%H:%M')}"
             )
             if mail_dt <= deadline_dt:
-                score = 1
-                reason = f"{task_prefix.strip()} 기간내 제출"
+                base_score = 2.0
+                violations = []
+
+                # 첨부파일 검사
+                if require_attachment:
+                    if not has_att:
+                        base_score -= 1.0
+                        violations.append("첨부없음")
+                else:
+                    if has_att:
+                        base_score -= 1.0
+                        violations.append("첨부있음")
+
+                # 제목 양식 검사
+                # 띄어쓰기나 대괄호 없이 '과제0.X학번' 또는 'assignment0.X학번'
+                clean_sub = re.sub(r"\s+", "", subject.lower())
+                exact_title_re = re.compile(
+                    rf"^(과제|assignment)0?\.?{task_num.replace('.', r'\.') if task_num else ''}(\d{{8,11}})$",
+                    re.IGNORECASE,
+                )
+                is_exact_title = bool(exact_title_re.match(clean_sub))
+
+                if not is_exact_title:
+                    base_score -= 0.2
+                    violations.append("제목양식오류")
+
+                if not violations:
+                    score = 2.0
+                    reason = "정확한 양식/조건충족(+2)"
+                else:
+                    score = round(base_score, 1)
+                    reason = f"조건위반({','.join(violations)})"
 
         output_rows.append(
             [student_id, score, reason, formatted_date, name, short_subject]
@@ -136,6 +167,11 @@ if __name__ == "__main__":
         default=None,
         help="검색 쿼리 지정 (지정하지 않으면 settings.json의 마지막 값을 사용)",
     )
+    parser.add_argument(
+        "--require-attachment",
+        action="store_true",
+        help="첨부 파일이 있어야 정상으로 간주",
+    )
     args = parser.parse_args()
 
-    extract_grades(query=args.query)
+    extract_grades(query=args.query, require_attachment=args.require_attachment)

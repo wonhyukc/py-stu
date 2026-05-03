@@ -18,11 +18,20 @@ def fetch_assignment_emails(query_string, max_results=100):
 
     email_data = []
 
+    def _has_attachment(payload):
+        if "parts" in payload:
+            for part in payload["parts"]:
+                if part.get("filename"):
+                    return True
+                if _has_attachment(part):
+                    return True
+        return False
+
     for msg in messages:
         msg_detail = (
             service.users()
             .messages()
-            .get(userId="me", id=msg["id"], format="metadata")
+            .get(userId="me", id=msg["id"], format="full")
             .execute()
         )
         headers = msg_detail["payload"]["headers"]
@@ -46,6 +55,7 @@ def fetch_assignment_emails(query_string, max_results=100):
         )
 
         thread_id = msg_detail["threadId"]
+        has_att = _has_attachment(msg_detail["payload"])
 
         email_data.append(
             {
@@ -54,6 +64,7 @@ def fetch_assignment_emails(query_string, max_results=100):
                 "subject": subject,
                 "sender": sender,
                 "date_str": date_str,
+                "has_attachment": has_att,
                 "is_replied_by_instructor": check_replied_by_instructor(
                     service, thread_id
                 ),
