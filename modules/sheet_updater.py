@@ -8,12 +8,22 @@ SPREADSHEET_ID = "1XA5Hnu5PEidFMreanPCy1eMrofGiyFDPo4buN3129Mc"
 TARGET_GID = 1514293361
 
 
+import google.auth
+
+
 def get_sheet_service():
     # 프로젝트 최상단 폴더의 secret.json 위치 계산
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
 
-    creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
+    if os.path.exists(secret_path):
+        creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
+    else:
+        print(
+            "ℹ️ secret.json이 없으므로 WIF(Application Default Credentials)를 시도합니다."
+        )
+        creds, _ = google.auth.default(scopes=SCOPES)
+
     # cache_discovery=False 로 무한 지연 에러 원천 차단
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 

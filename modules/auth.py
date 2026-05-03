@@ -7,10 +7,14 @@ from googleapiclient.discovery import build
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
+import google.auth
+
+
 def get_gmail_service(credentials_file="credentials.json", token_file="token.json"):
     """
     Google OAuth 2.0 흐름을 통해 Gmail API(읽기 전용) 서비스 객체를 반환합니다.
     token.json이 없거나 만료된 경우 브라우저를 열어 최초 로그인을 유도합니다.
+    WIF 환경 등 credentials.json이 없는 경우 Application Default Credentials를 사용합니다.
     """
     creds = None
 
@@ -18,8 +22,17 @@ def get_gmail_service(credentials_file="credentials.json", token_file="token.jso
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
 
-    # 유효한 인증 정보가 없으면, 브라우저 로그인을 통한 인증(OAuth) 처리
+    # 유효한 인증 정보가 없으면, 인증(OAuth) 처리 또는 WIF 시도
     if not creds or not creds.valid:
+        if not os.path.exists(credentials_file):
+            print(
+                "ℹ️ credentials.json이 없으므로 WIF(Application Default Credentials)를 시도합니다."
+            )
+            creds, _ = google.auth.default(scopes=SCOPES)
+            if hasattr(creds, "with_subject"):
+                creds = creds.with_subject("wonhyukc@stu.ac.kr")
+            return build("gmail", "v1", credentials=creds)
+
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:

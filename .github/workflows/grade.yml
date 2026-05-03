@@ -1,0 +1,38 @@
+name: Auto Grade Assignment 0.7
+
+on:
+  workflow_dispatch:  # 수동 실행
+  # push:
+  #   branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+
+    - name: Authenticate to Google Cloud (WIF)
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: 'projects/194208747311/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
+        service_account: 'fedora-2603@drive-project-84200.iam.gserviceaccount.com'
+
+    - name: Run Auto Grader (0.7)
+      run: |
+        python bin/extract_grades.py --query "과제 0.7 | assignment 0.7"

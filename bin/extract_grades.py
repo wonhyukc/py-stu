@@ -42,7 +42,7 @@ def extract_grades(query=None):
     current_query = settings.get("gmail_search_query", "과제 0.4 | assignment 0.4")
     print(f"🔍 다음 쿼리 규칙으로 메일을 수집합니다: [{current_query}]")
 
-    deadline_dt = datetime.strptime("2026-03-31 23:59:59", "%Y-%m-%d %H:%M:%S")
+    deadline_dt = datetime.strptime("2026-04-20 09:00:00", "%Y-%m-%d %H:%M:%S")
     emails = fetch_assignment_emails(current_query, max_results=50)
 
     # 제외할 본인 이메일 (발송한 메일 제외)
